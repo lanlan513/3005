@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion, DynamicParticle } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
 import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
@@ -20,6 +20,11 @@ import {
   getCompanionEncounterProgress,
   generateHint,
 } from '../data/companions';
+import {
+  DREAM_REGIONS,
+  generateRegionDecorations,
+  getRegionByFragmentId,
+} from '../data/dreamRegions';
 
 const FOG_CELL_SIZE = 40;
 const BASE_VISIBILITY_RADIUS = 120;
@@ -187,6 +192,11 @@ export const useGameStore = create<GameState & {
   checkCompanionProximity: () => void;
   triggerHint: () => void;
   dismissHint: () => void;
+  unlockDreamRegion: (fragmentId: string) => void;
+  updateDynamicParticles: () => void;
+  spawnDynamicParticles: () => void;
+  closeRegionUnlock: () => void;
+  updateDreamDecorations: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -230,6 +240,11 @@ export const useGameStore = create<GameState & {
   currentHint: null,
   showHint: false,
   lastHintTime: 0,
+  dreamRegions: [...DREAM_REGIONS],
+  dreamDecorations: [],
+  dynamicParticles: [],
+  showRegionUnlock: false,
+  unlockRegion: null,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -342,6 +357,7 @@ export const useGameStore = create<GameState & {
           showStory: true,
           currentStory: story || null,
         });
+        get().unlockDreamRegion(fragment.id);
         break;
       }
     }
@@ -796,6 +812,11 @@ export const useGameStore = create<GameState & {
       currentHint: null,
       showHint: false,
       lastHintTime: 0,
+      dreamRegions: [...DREAM_REGIONS],
+      dreamDecorations: [],
+      dynamicParticles: [],
+      showRegionUnlock: false,
+      unlockRegion: null,
     });
   },
 
@@ -1005,5 +1026,157 @@ export const useGameStore = create<GameState & {
 
   dismissHint: () => {
     set({ showHint: false });
+  },
+
+  unlockDreamRegion: (fragmentId: string) => {
+    const { dreamRegions, dreamDecorations } = get();
+    const region = getRegionByFragmentId(fragmentId);
+    
+    if (!region || region.unlocked) return;
+
+    const newDecorations = generateRegionDecorations(region);
+
+    set({
+      dreamRegions: dreamRegions.map((r) =>
+        r.id === region.id ? { ...r, unlocked: true } : r
+      ),
+      dreamDecorations: [...dreamDecorations, ...newDecorations],
+      showRegionUnlock: true,
+      unlockRegion: { ...region, unlocked: true },
+    });
+  },
+
+  closeRegionUnlock: () => {
+    set({ showRegionUnlock: false, unlockRegion: null });
+  },
+
+  updateDreamDecorations: () => {
+    const { dreamDecorations } = get();
+    set({
+      dreamDecorations: dreamDecorations.map((d) => ({
+        ...d,
+        phase: d.phase + 0.02,
+      })),
+    });
+  },
+
+  spawnDynamicParticles: () => {
+    const { dreamRegions, dynamicParticles } = get();
+    const newParticles: DynamicParticle[] = [];
+
+    for (const region of dreamRegions) {
+      if (!region.unlocked || !region.hasDynamicTerrain) continue;
+
+      if (Math.random() > 0.3) continue;
+
+      const x = region.x + Math.random() * region.width;
+      const y = region.y + Math.random() * region.height;
+
+      let vx = 0;
+      let vy = 0;
+      let size = 3;
+      let color = region.themeColor;
+      let rotationSpeed = 0.02;
+      let maxLife = 200;
+
+      switch (region.dynamicType) {
+        case 'petals':
+          vx = (Math.random() - 0.5) * 0.5;
+          vy = 0.3 + Math.random() * 0.5;
+          size = 6 + Math.random() * 8;
+          color = '#FFB6C8';
+          rotationSpeed = (Math.random() - 0.5) * 0.05;
+          maxLife = 300;
+          break;
+        case 'leaves':
+          vx = (Math.random() - 0.5) * 0.8;
+          vy = 0.5 + Math.random() * 0.7;
+          size = 5 + Math.random() * 7;
+          color = '#FF8C42';
+          rotationSpeed = (Math.random() - 0.5) * 0.08;
+          maxLife = 250;
+          break;
+        case 'snowflakes':
+          vx = (Math.random() - 0.5) * 0.3;
+          vy = 0.2 + Math.random() * 0.4;
+          size = 2 + Math.random() * 4;
+          color = '#FFFFFF';
+          rotationSpeed = (Math.random() - 0.5) * 0.03;
+          maxLife = 400;
+          break;
+        case 'bloom':
+        case 'sway':
+        case 'rainbow':
+          vx = 0;
+          vy = -0.2 - Math.random() * 0.3;
+          size = 2 + Math.random() * 3;
+          color = region.themeColor;
+          maxLife = 150;
+          break;
+      }
+
+      newParticles.push({
+        x,
+        y,
+        vx,
+        vy,
+        size,
+        color,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed,
+        life: maxLife,
+        maxLife,
+        type: region.dynamicType,
+      });
+    }
+
+    if (newParticles.length > 0) {
+      set({ dynamicParticles: [...dynamicParticles, ...newParticles] });
+    }
+  },
+
+  updateDynamicParticles: () => {
+    const { dynamicParticles, dreamRegions } = get();
+    
+    const updatedParticles = dynamicParticles
+      .map((p) => {
+        const newX = p.x + p.vx;
+        const newY = p.y + p.vy;
+        const newLife = p.life - 1;
+        const newRotation = p.rotation + p.rotationSpeed;
+
+        let newVx = p.vx;
+        const newVy = p.vy;
+
+        if (p.type === 'petals' || p.type === 'leaves') {
+          newVx += Math.sin(newLife * 0.05) * 0.02;
+        }
+
+        const inRegion = dreamRegions.some(
+          (r) =>
+            r.unlocked &&
+            newX >= r.x - 20 &&
+            newX <= r.x + r.width + 20 &&
+            newY >= r.y - 20 &&
+            newY <= r.y + r.height + 20
+        );
+
+        if (!inRegion && newLife < p.maxLife * 0.7) {
+          return { ...p, life: -1 };
+        }
+
+        return {
+          ...p,
+          x: newX,
+          y: newY,
+          vx: newVx,
+          vy: newVy,
+          rotation: newRotation,
+          life: newLife,
+        };
+      })
+      .filter((p) => p.life > 0);
+
+    set({ dynamicParticles: updatedParticles });
   },
 }));

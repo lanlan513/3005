@@ -19,6 +19,7 @@ export const MiniMap = () => {
     explorationProgress,
     hiddenAreas,
     abilities,
+    dreamRegions,
   } = useGameStore();
 
   const miniMapWidth = 180;
@@ -123,6 +124,42 @@ export const MiniMap = () => {
       }
     }
 
+    for (const region of dreamRegions) {
+      const rx = region.x * scaleX;
+      const ry = region.y * scaleY;
+      const rw = region.width * scaleX;
+      const rh = region.height * scaleY;
+
+      if (region.unlocked) {
+        ctx.fillStyle = region.themeColor + '35';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = region.themeColor + 'AA';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 2]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = region.themeColor;
+        ctx.font = 'bold 8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(region.name, rx + rw / 2, ry + rh / 2 + 3);
+      } else {
+        ctx.fillStyle = region.themeColor + '10';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = region.themeColor + '25';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 2]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = region.themeColor + '55';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', rx + rw / 2, ry + rh / 2);
+      }
+    }
+
     for (const area of hiddenAreas) {
       const ax = area.x * scaleX;
       const ay = area.y * scaleY;
@@ -173,7 +210,7 @@ export const MiniMap = () => {
     ctx.beginPath();
     ctx.arc(px, py, 10, 0, Math.PI * 2);
     ctx.fill();
-  }, [butterfly, fragments, flowers, fogGrid, fogCellSize, mapWidth, mapHeight, cameraX, cameraY, viewportWidth, viewportHeight]);
+  }, [butterfly, fragments, flowers, fogGrid, fogCellSize, mapWidth, mapHeight, cameraX, cameraY, viewportWidth, viewportHeight, dreamRegions, hiddenAreas, abilities]);
 
   return (
     <div className="fixed bottom-6 right-6 pointer-events-auto z-20">
@@ -214,6 +251,10 @@ export const MiniMap = () => {
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-emerald-400" style={{ clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />
             <span className="text-purple-600">已发现花朵</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded bg-pink-300/60 border border-pink-400" />
+            <span className="text-purple-600">梦境区域</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-purple-400/50" />

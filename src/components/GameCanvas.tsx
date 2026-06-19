@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree, ButterflyCompanion } from '../types/game';
+import { Flower, Tree, ButterflyCompanion, DreamRegion } from '../types/game';
 import { BASE_ACCEL, FRAGMENT_RESPAWN_INTERVAL } from '../store/gameStore';
 
 const DECORATIVE_FLOWER_COUNT = 80;
@@ -77,6 +77,9 @@ export const GameCanvas = () => {
     companions,
     activeCompanionId,
     companionParticles,
+    dreamRegions,
+    dreamDecorations,
+    dynamicParticles,
     setButterflyVelocity,
     updateButterfly,
     updateFragments,
@@ -105,6 +108,9 @@ export const GameCanvas = () => {
     updateCompanionParticles,
     openCompanionPanel,
     triggerHint,
+    updateDreamDecorations,
+    spawnDynamicParticles,
+    updateDynamicParticles,
   } = useGameStore();
 
   useEffect(() => {
@@ -278,6 +284,9 @@ export const GameCanvas = () => {
     checkCompanionEncounters();
     checkCompanionProximity();
     updateCompanionParticles();
+    updateDreamDecorations();
+    spawnDynamicParticles();
+    updateDynamicParticles();
     if (Math.random() < 0.008) {
       triggerHint();
     }
@@ -320,10 +329,13 @@ export const GameCanvas = () => {
     const offsetY = viewportHeight / 2 - cameraY;
 
     drawGround(ctx, offsetX, offsetY);
+    drawDreamRegions(ctx, offsetX, offsetY);
     drawPath(ctx, offsetX, offsetY);
+    drawDreamDecorations(ctx, offsetX, offsetY);
     drawHiddenAreas(ctx, offsetX, offsetY);
     drawTrees(ctx, offsetX, offsetY);
     drawFlowers(ctx, offsetX, offsetY);
+    drawDynamicParticles(ctx, offsetX, offsetY);
     drawUnlockedCompanions(ctx, offsetX, offsetY);
     drawLockedCompanions(ctx, offsetX, offsetY);
     drawFireflies(ctx, offsetX, offsetY);
@@ -351,6 +363,378 @@ export const GameCanvas = () => {
       ctx.beginPath();
       ctx.ellipse(gx, gy, 30 + (i % 3) * 10, 20 + (i % 2) * 8, i * 0.3, 0, Math.PI * 2);
       ctx.fill();
+    }
+  };
+
+  const drawDreamRegions = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const region of dreamRegions) {
+      const x = region.x + ox;
+      const y = region.y + oy;
+      
+      if (x + region.width < -100 || x > viewportWidth + 100 || 
+          y + region.height < -100 || y > viewportHeight + 100) continue;
+
+      ctx.save();
+
+      if (region.unlocked) {
+        const gradient = ctx.createRadialGradient(
+          x + region.width / 2, y + region.height / 2, 0,
+          x + region.width / 2, y + region.height / 2, Math.max(region.width, region.height) / 2
+        );
+        gradient.addColorStop(0, region.bgColor + 'AA');
+        gradient.addColorStop(0.6, region.bgColor + '66');
+        gradient.addColorStop(1, region.bgColor + '00');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x - 30, y - 30, region.width + 60, region.height + 60);
+
+        const borderGradient = ctx.createLinearGradient(x, y, x + region.width, y + region.height);
+        borderGradient.addColorStop(0, region.themeColor + '88');
+        borderGradient.addColorStop(0.5, region.themeColor + '44');
+        borderGradient.addColorStop(1, region.themeColor + '88');
+        ctx.strokeStyle = borderGradient;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([15, 8]);
+        ctx.lineDashOffset = timeRef.current * 10;
+        ctx.strokeRect(x, y, region.width, region.height);
+        ctx.setLineDash([]);
+
+        drawRegionTerrain(ctx, region, x, y);
+
+        ctx.fillStyle = region.themeColor;
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(region.name, x + region.width / 2, y + 35);
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = '13px sans-serif';
+        ctx.fillText(region.description, x + region.width / 2, y + 55);
+      } else {
+        const hintAlpha = 0.08 + Math.sin(timeRef.current * 1.2 + region.order) * 0.04;
+        ctx.fillStyle = region.themeColor + Math.floor(hintAlpha * 255).toString(16).padStart(2, '0');
+        ctx.fillRect(x, y, region.width, region.height);
+        
+        ctx.strokeStyle = region.themeColor + '22';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 10]);
+        ctx.strokeRect(x, y, region.width, region.height);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = region.themeColor + '66';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', x + region.width / 2, y + region.height / 2);
+      }
+      
+      ctx.restore();
+    }
+  };
+
+  const drawRegionTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number) => {
+    const time = timeRef.current;
+
+    switch (region.terrainType) {
+      case 'garden':
+        drawGardenTerrain(ctx, region, x, y, time);
+        break;
+      case 'field':
+        drawFieldTerrain(ctx, region, x, y, time);
+        break;
+      case 'valley':
+        drawValleyTerrain(ctx, region, x, y, time);
+        break;
+      case 'lake':
+        drawLakeTerrain(ctx, region, x, y, time);
+        break;
+      case 'bridge':
+        drawBridgeTerrain(ctx, region, x, y, time);
+        break;
+    }
+  };
+
+  const drawGardenTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number, time: number) => {
+    for (let i = 0; i < 8; i++) {
+      const fx = x + 50 + (i * (region.width - 100)) / 7;
+      const fy = y + region.height - 60 + Math.sin(time + i) * 5;
+      const flowerSize = 20 + Math.sin(time * 2 + i * 0.5) * 3;
+
+      ctx.strokeStyle = '#4CAF50';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + flowerSize);
+      ctx.quadraticCurveTo(fx + Math.sin(time + i) * 3, fy + flowerSize * 0.5, fx, fy);
+      ctx.stroke();
+
+      ctx.fillStyle = region.themeColor;
+      for (let j = 0; j < 5; j++) {
+        const angle = (Math.PI * 2 * j) / 5 + time * 0.2;
+        const px = fx + Math.cos(angle) * flowerSize * 0.4;
+        const py = fy + Math.sin(angle) * flowerSize * 0.4;
+        ctx.beginPath();
+        ctx.ellipse(px, py, flowerSize * 0.3, flowerSize * 0.2, angle, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#FFD93D';
+      ctx.beginPath();
+      ctx.arc(fx, fy, flowerSize * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  const drawFieldTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number, time: number) => {
+    for (let i = 0; i < 10; i++) {
+      const fx = x + 40 + (i * (region.width - 80)) / 9;
+      const fy = y + region.height - 80 + Math.sin(time * 1.5 + i * 0.8) * 8;
+      const stemHeight = 60 + Math.sin(time + i) * 5;
+
+      ctx.strokeStyle = '#228B22';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + stemHeight + 20);
+      ctx.quadraticCurveTo(fx + Math.sin(time + i) * 5, fy + stemHeight / 2, fx, fy);
+      ctx.stroke();
+
+      const headSize = 25 + Math.sin(time * 1.5 + i) * 3;
+      ctx.fillStyle = region.themeColor;
+      for (let j = 0; j < 12; j++) {
+        const angle = (Math.PI * 2 * j) / 12;
+        const px = fx + Math.cos(angle) * headSize * 0.5;
+        const py = fy + Math.sin(angle) * headSize * 0.5;
+        ctx.beginPath();
+        ctx.ellipse(px, py, headSize * 0.4, headSize * 0.2, angle, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#8B4513';
+      ctx.beginPath();
+      ctx.arc(fx, fy, headSize * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  const drawValleyTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number, time: number) => {
+    const waveOffset = Math.sin(time * 0.8) * 5;
+
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(x, y + region.height);
+    ctx.lineTo(x + region.width * 0.3, y + region.height * 0.4 + waveOffset);
+    ctx.lineTo(x + region.width * 0.5, y + region.height * 0.6 - waveOffset);
+    ctx.lineTo(x + region.width * 0.7, y + region.height * 0.3 + waveOffset * 0.5);
+    ctx.lineTo(x + region.width, y + region.height);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(x, y + region.height);
+    ctx.lineTo(x + region.width * 0.2, y + region.height * 0.5 - waveOffset * 0.7);
+    ctx.lineTo(x + region.width * 0.4, y + region.height * 0.7 + waveOffset * 0.5);
+    ctx.lineTo(x + region.width * 0.6, y + region.height * 0.45 - waveOffset * 0.3);
+    ctx.lineTo(x + region.width * 0.8, y + region.height * 0.6 + waveOffset * 0.6);
+    ctx.lineTo(x + region.width, y + region.height);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  const drawLakeTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number, time: number) => {
+    const lakeX = x + region.width * 0.15;
+    const lakeY = y + region.height * 0.4;
+    const lakeW = region.width * 0.7;
+    const lakeH = region.height * 0.5;
+
+    const waterGradient = ctx.createRadialGradient(
+      lakeX + lakeW / 2, lakeY + lakeH / 2, 0,
+      lakeX + lakeW / 2, lakeY + lakeH / 2, Math.max(lakeW, lakeH) / 2
+    );
+    waterGradient.addColorStop(0, '#87CEEB');
+    waterGradient.addColorStop(0.5, '#5DADE2');
+    waterGradient.addColorStop(1, '#3498DB');
+    ctx.fillStyle = waterGradient;
+    ctx.beginPath();
+    ctx.ellipse(lakeX + lakeW / 2, lakeY + lakeH / 2, lakeW / 2, lakeH / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const ripplePhase = (time * 0.5 + i * 0.7) % 1;
+      const rippleSize = ripplePhase * Math.min(lakeW, lakeH) * 0.4;
+      ctx.globalAlpha = 1 - ripplePhase;
+      ctx.beginPath();
+      ctx.ellipse(
+        lakeX + lakeW / 2, 
+        lakeY + lakeH / 2, 
+        rippleSize * 1.2, 
+        rippleSize * 0.8, 
+        0, 0, Math.PI * 2
+      );
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  const drawBridgeTerrain = (ctx: CanvasRenderingContext2D, region: DreamRegion, x: number, y: number, time: number) => {
+    const colors = ['#FF6B6B', '#FFD93D', '#6BCF7F', '#4DABF7', '#9B7EDC'];
+    const bridgeY = y + region.height * 0.5;
+    const bridgeHeight = 40;
+
+    for (let i = 0; i < colors.length; i++) {
+      const offset = (i - colors.length / 2) * bridgeHeight * 0.3;
+      const color = colors[i];
+      
+      ctx.strokeStyle = color;
+      ctx.lineWidth = bridgeHeight / colors.length;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + 30, bridgeY + offset);
+      ctx.quadraticCurveTo(
+        x + region.width / 2, 
+        bridgeY - 80 + offset,
+        x + region.width - 30, 
+        bridgeY + offset
+      );
+      ctx.stroke();
+    }
+
+    const glowIntensity = (Math.sin(time * 2) + 1) / 2;
+    const glowGradient = ctx.createRadialGradient(
+      x + region.width / 2, bridgeY - 40, 0,
+      x + region.width / 2, bridgeY - 40, 100 + glowIntensity * 30
+    );
+    glowGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glowGradient;
+    ctx.fillRect(
+      x + region.width / 2 - 150, 
+      bridgeY - 150, 
+      300, 
+      200
+    );
+  };
+
+  const drawDreamDecorations = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const deco of dreamDecorations) {
+      const x = deco.x + ox;
+      const y = deco.y + oy;
+      
+      if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) continue;
+
+      const sway = Math.sin(deco.phase) * 2;
+
+      ctx.save();
+      
+      switch (deco.type) {
+        case 'tree':
+          ctx.fillStyle = '#8B6914';
+          ctx.fillRect(x - 4, y, 8, deco.size * 0.5);
+          ctx.fillStyle = deco.color;
+          ctx.beginPath();
+          ctx.arc(x + sway, y - deco.size * 0.2, deco.size * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'flower':
+          ctx.strokeStyle = '#4CAF50';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, y + deco.size * 0.5);
+          ctx.quadraticCurveTo(x + sway, y + deco.size * 0.25, x + sway, y);
+          ctx.stroke();
+          ctx.fillStyle = deco.color;
+          for (let i = 0; i < 5; i++) {
+            const angle = (Math.PI * 2 * i) / 5 + deco.phase;
+            const px = x + sway + Math.cos(angle) * deco.size * 0.3;
+            const py = y + Math.sin(angle) * deco.size * 0.3;
+            ctx.beginPath();
+            ctx.ellipse(px, py, deco.size * 0.2, deco.size * 0.12, angle, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = '#FFD93D';
+          ctx.beginPath();
+          ctx.arc(x + sway, y, deco.size * 0.15, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'rock':
+          ctx.fillStyle = '#808080';
+          ctx.beginPath();
+          ctx.ellipse(x, y, deco.size * 0.4, deco.size * 0.25, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#A0A0A0';
+          ctx.beginPath();
+          ctx.ellipse(x - deco.size * 0.1, y - deco.size * 0.05, deco.size * 0.2, deco.size * 0.12, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'bush':
+          ctx.fillStyle = deco.color;
+          ctx.globalAlpha = 0.7;
+          ctx.beginPath();
+          ctx.arc(x, y, deco.size * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x - deco.size * 0.25, y + deco.size * 0.1, deco.size * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x + deco.size * 0.25, y + deco.size * 0.1, deco.size * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          break;
+      }
+      
+      ctx.restore();
+    }
+  };
+
+  const drawDynamicParticles = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const p of dynamicParticles) {
+      const x = p.x + ox;
+      const y = p.y + oy;
+      
+      if (x < -50 || x > viewportWidth + 50 || y < -50 || y > viewportHeight + 50) continue;
+
+      const lifeRatio = p.life / p.maxLife;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(p.rotation);
+      ctx.globalAlpha = lifeRatio;
+
+      switch (p.type) {
+        case 'petals':
+        case 'leaves':
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size, p.size * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+          ctx.beginPath();
+          ctx.ellipse(-p.size * 0.2, -p.size * 0.1, p.size * 0.4, p.size * 0.2, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'snowflakes':
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 5;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          break;
+        case 'bloom':
+        case 'sway':
+        case 'rainbow': {
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = lifeRatio * 0.6;
+          const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 3);
+          glow.addColorStop(0, p.color);
+          glow.addColorStop(1, p.color + '00');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 3, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+      }
+
+      ctx.restore();
     }
   };
 

@@ -173,6 +173,53 @@ export interface CompanionState {
   lastHintTime: number;
 }
 
+export type TerrainType = 'garden' | 'field' | 'valley' | 'lake' | 'bridge';
+export type DynamicTerrainType = 'petals' | 'bloom' | 'sway' | 'leaves' | 'snowflakes' | 'rainbow';
+
+export interface DreamDecoration {
+  id: string;
+  type: 'tree' | 'flower' | 'rock' | 'bush';
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  phase: number;
+}
+
+export interface DreamRegion {
+  id: string;
+  name: string;
+  description: string;
+  fragmentId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  unlocked: boolean;
+  themeColor: string;
+  bgColor: string;
+  terrainType: TerrainType;
+  hasDynamicTerrain: boolean;
+  dynamicType: DynamicTerrainType;
+  decorationCount: number;
+  order: number;
+  unlockProgress?: number;
+}
+
+export interface DynamicParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  rotation: number;
+  rotationSpeed: number;
+  life: number;
+  maxLife: number;
+  type: DynamicTerrainType;
+}
+
 export interface GameState extends CompanionState {
   butterfly: Butterfly;
   fragments: Fragment[];
@@ -207,4 +254,9 @@ export interface GameState extends CompanionState {
   unlockAbility: ButterflyAbility | null;
   baseSpeed: number;
   baseVisibility: number;
+  dreamRegions: DreamRegion[];
+  dreamDecorations: DreamDecoration[];
+  dynamicParticles: DynamicParticle[];
+  showRegionUnlock: boolean;
+  unlockRegion: DreamRegion | null;
 }
