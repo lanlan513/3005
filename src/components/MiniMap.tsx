@@ -7,6 +7,7 @@ export const MiniMap = () => {
   const {
     butterfly,
     fragments,
+    flowers,
     fogGrid,
     fogCellSize,
     mapWidth,
@@ -64,6 +65,40 @@ export const MiniMap = () => {
     ctx.strokeRect(viewportMapX, viewportMapY, viewportMapW, viewportMapH);
     ctx.setLineDash([]);
 
+    for (const flower of flowers) {
+      if (flower.type === 'decorative') continue;
+      const fx = flower.x * scaleX;
+      const fy = flower.y * scaleY;
+
+      if (flower.discovered) {
+        ctx.fillStyle = flower.color;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+          const r = i % 2 === 0 ? 4 : 2;
+          const px = fx + Math.cos(angle) * r;
+          const py = fy + Math.sin(angle) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else if (flower.unlocked) {
+        ctx.fillStyle = flower.color + 'AA';
+        ctx.beginPath();
+        ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
     for (const fragment of fragments) {
       if (fragment.collected) continue;
       const fx = fragment.x * scaleX;
@@ -103,7 +138,7 @@ export const MiniMap = () => {
     ctx.beginPath();
     ctx.arc(px, py, 10, 0, Math.PI * 2);
     ctx.fill();
-  }, [butterfly, fragments, fogGrid, fogCellSize, mapWidth, mapHeight, cameraX, cameraY, viewportWidth, viewportHeight]);
+  }, [butterfly, fragments, flowers, fogGrid, fogCellSize, mapWidth, mapHeight, cameraX, cameraY, viewportWidth, viewportHeight]);
 
   return (
     <div className="fixed bottom-6 right-6 pointer-events-auto z-20">
@@ -132,7 +167,7 @@ export const MiniMap = () => {
             />
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-3 text-xs">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-full bg-yellow-400 border border-white" />
             <span className="text-purple-600">你</span>
@@ -140,6 +175,10 @@ export const MiniMap = () => {
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-full bg-pink-400" />
             <span className="text-purple-600">记忆碎片</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 bg-emerald-400" style={{ clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />
+            <span className="text-purple-600">已发现花朵</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-purple-400/50" />

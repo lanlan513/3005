@@ -250,6 +250,7 @@ export const GameCanvas = () => {
       if (dist < flower.size * 2 + 20) {
         discoverFlower(flower.id);
         spawnCollectParticles(flower.x, flower.y, flower.color);
+        openFlowerCard(flower.id);
       }
     }
   };
