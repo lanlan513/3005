@@ -63,7 +63,7 @@ export const HUD = () => {
   const revealedPaths = hiddenPaths.filter(p => p.revealed).length;
   const revealedTexts = memoryTexts.filter(t => t.revealed).length;
   const activatedMechanisms = lightMechanisms.filter(m => m.activated).length;
-  const litFlowers = giantFlowers.filter(f => f.lit).length;
+  const discoveredGiantFlowers = giantFlowers.filter(f => f.discovered).length;
   const lightColorName: Record<string, string> = { gold: '金光', blue: '蓝光', pink: '粉光' };
 
   return (
@@ -234,8 +234,8 @@ export const HUD = () => {
           <div className="space-y-1.5 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-xs">🌸</span>
-              <span className="text-amber-600 flex-1">巨大花朵</span>
-              <span className="text-amber-500 font-bold">{litFlowers}/{giantFlowers.length}</span>
+              <span className="text-amber-600 flex-1">发现巨花</span>
+              <span className="text-amber-500 font-bold">{discoveredGiantFlowers}/{giantFlowers.length}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs">🛤️</span>

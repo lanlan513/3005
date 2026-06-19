@@ -267,6 +267,7 @@ export interface GiantFlower {
   bloomPhase: number;
   lit: boolean;
   litIntensity: number;
+  discovered: boolean;
 }
 
 export interface HiddenPath {

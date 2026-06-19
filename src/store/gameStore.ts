@@ -217,7 +217,10 @@ export const useGameStore = create<GameState & {
   setActiveLight: (lightId: string | null) => void;
   rotateLight: (delta: number) => void;
   interactWithLight: (lightId: string) => void;
+  interactWithNearestLight: () => void;
+  findNearestLight: () => LightSource | null;
   checkLightBeamHits: () => void;
+  checkGiantFlowerDiscovery: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -1270,9 +1273,16 @@ export const useGameStore = create<GameState & {
   },
 
   updateLightSources: () => {
-    const { lightSources } = get();
+    const { lightSources, activeLightId } = get();
     set({
       lightSources: lightSources.map(l => {
+        if (l.id === activeLightId) {
+          return {
+            ...l,
+            pulsePhase: l.pulsePhase + 0.08,
+          };
+        }
+
         let newX = l.x;
         let newY = l.y;
         let newPhase = l.movePhase + l.moveSpeed;
@@ -1290,7 +1300,7 @@ export const useGameStore = create<GameState & {
           x: newX,
           y: newY,
           movePhase: newPhase,
-          pulsePhase: l.pulsePhase + 0.05,
+          pulsePhase: l.pulsePhase + 0.03,
         };
       }),
     });
@@ -1302,36 +1312,34 @@ export const useGameStore = create<GameState & {
       giantFlowers: giantFlowers.map(f => ({
         ...f,
         swayPhase: f.swayPhase + 0.02,
-        bloomPhase: f.lit ? Math.min(1, f.bloomPhase + 0.01) : Math.max(0, f.bloomPhase - 0.005),
-        litIntensity: f.lit ? Math.min(1, f.litIntensity + 0.05) : Math.max(0, f.litIntensity - 0.03),
+        bloomPhase: f.litIntensity > 0.3 ? Math.min(1, f.bloomPhase + 0.01) : Math.max(0, f.bloomPhase - 0.005),
       })),
     });
   },
 
   updateLightPuzzleLogic: () => {
-    get().checkLightBeamHits();
-
     const { hiddenPaths, memoryTexts, lightMechanisms, giantFlowers } = get();
 
     const updatedPaths = hiddenPaths.map(p => {
       if (p.revealed) return p;
-      return { ...p, revealProgress: Math.max(0, p.revealProgress - 0.005) };
+      return { ...p, revealProgress: Math.max(0, p.revealProgress - 0.01) };
     });
 
     const updatedTexts = memoryTexts.map(t => {
       if (t.revealed) return t;
-      return { ...t, revealProgress: Math.max(0, t.revealProgress - 0.003) };
+      return { ...t, revealProgress: Math.max(0, t.revealProgress - 0.008) };
     });
 
     const updatedMechanisms = lightMechanisms.map(m => ({
       ...m,
       pulsePhase: m.pulsePhase + 0.04,
-      activateProgress: m.activated ? Math.min(1, m.activateProgress + 0.02) : Math.max(0, m.activateProgress - 0.01),
+      activateProgress: m.activated ? Math.min(1, m.activateProgress + 0.02) : Math.max(0, m.activateProgress - 0.015),
     }));
 
     const updatedFlowers = giantFlowers.map(f => ({
       ...f,
       lit: false,
+      litIntensity: Math.max(0, f.litIntensity - 0.04),
     }));
 
     set({
@@ -1372,13 +1380,48 @@ export const useGameStore = create<GameState & {
       if (activeLightId === lightId) {
         set({ activeLightId: null, showLightPuzzleHint: false });
       } else {
-        set({ activeLightId: lightId, showLightPuzzleHint: true });
+        set({
+          activeLightId: lightId,
+          showLightPuzzleHint: true,
+          lightSources: lightSources.map(l =>
+            l.id === lightId ? { ...l, x: l.originX, y: l.originY } : l
+          ),
+        });
       }
     }
   },
 
+  interactWithNearestLight: () => {
+    const { lightSources, butterfly, activeLightId, interactWithLight } = get();
+    const nearest = lightSources
+      .filter(l => l.playerControlled)
+      .map(l => ({
+        light: l,
+        dist: Math.sqrt((butterfly.x - l.x) ** 2 + (butterfly.y - l.y) ** 2),
+      }))
+      .filter(item => item.dist < 120)
+      .sort((a, b) => a.dist - b.dist);
+
+    if (nearest.length > 0) {
+      interactWithLight(nearest[0].light.id);
+    }
+  },
+
+  findNearestLight: () => {
+    const { lightSources, butterfly } = get();
+    const nearest = lightSources
+      .filter(l => l.playerControlled)
+      .map(l => ({
+        light: l,
+        dist: Math.sqrt((butterfly.x - l.x) ** 2 + (butterfly.y - l.y) ** 2),
+      }))
+      .filter(item => item.dist < 120)
+      .sort((a, b) => a.dist - b.dist);
+    return nearest.length > 0 ? nearest[0].light : null;
+  },
+
   checkLightBeamHits: () => {
-    const { lightSources, giantFlowers, hiddenPaths, memoryTexts, lightMechanisms } = get();
+    const { lightSources, giantFlowers, hiddenPaths, memoryTexts, lightMechanisms, activeLightId } = get();
 
     const updatedFlowers = [...giantFlowers];
     const updatedPaths = hiddenPaths.map(p => ({ ...p }));
@@ -1390,14 +1433,19 @@ export const useGameStore = create<GameState & {
 
       const endX = light.x + Math.cos(light.angle) * light.beamLength;
       const endY = light.y + Math.sin(light.angle) * light.beamLength;
+      const isActivated = light.id === activeLightId;
 
       for (let i = 0; i < updatedFlowers.length; i++) {
         const flower = updatedFlowers[i];
         const distToBeam = pointToLineDistance(flower.x, flower.y, light.x, light.y, endX, endY);
-        if (distToBeam < flower.size * 0.8 && light.color === flower.reflectColor) {
-          updatedFlowers[i] = { ...flower, lit: true, litIntensity: Math.min(1, flower.litIntensity + 0.1) };
+        const hitRadius = flower.size * (isActivated ? 0.9 : 0.6);
+        if (distToBeam < hitRadius && light.color === flower.reflectColor) {
+          const increment = isActivated ? 0.08 : 0.02;
+          updatedFlowers[i] = { ...flower, lit: true, litIntensity: Math.min(1, flower.litIntensity + increment) };
         }
       }
+
+      if (!isActivated) continue;
 
       for (let i = 0; i < updatedPaths.length; i++) {
         const path = updatedPaths[i];
@@ -1407,13 +1455,13 @@ export const useGameStore = create<GameState & {
         let anyLit = false;
         for (const pt of path.points) {
           const distToBeam = pointToLineDistance(pt.x, pt.y, light.x, light.y, endX, endY);
-          if (distToBeam < light.beamWidth + path.width) {
+          if (distToBeam < light.beamWidth + path.width * 0.5) {
             anyLit = true;
             break;
           }
         }
         if (anyLit) {
-          const newProgress = Math.min(1, path.revealProgress + 0.02);
+          const newProgress = Math.min(1, path.revealProgress + 0.012);
           updatedPaths[i] = { ...path, revealProgress: newProgress, revealed: newProgress >= 1 };
         }
       }
@@ -1424,8 +1472,8 @@ export const useGameStore = create<GameState & {
         if (text.requiredColor !== light.color) continue;
 
         const distToBeam = pointToLineDistance(text.x, text.y, light.x, light.y, endX, endY);
-        if (distToBeam < light.beamWidth + 30) {
-          const newProgress = Math.min(1, text.revealProgress + 0.015);
+        if (distToBeam < light.beamWidth + 25) {
+          const newProgress = Math.min(1, text.revealProgress + 0.009);
           updatedTexts[i] = { ...text, revealProgress: newProgress, revealed: newProgress >= 1 };
         }
       }
@@ -1436,12 +1484,12 @@ export const useGameStore = create<GameState & {
         if (mech.requiredColor !== light.color) continue;
 
         const distToBeam = pointToLineDistance(mech.x, mech.y, light.x, light.y, endX, endY);
-        if (distToBeam < light.beamWidth + mech.size) {
-          const newProgress = Math.min(1, mech.activateProgress + 0.01);
-          const isActivated = newProgress >= 1;
-          updatedMechanisms[i] = { ...mech, activateProgress: newProgress, activated: isActivated };
+        if (distToBeam < light.beamWidth + mech.size * 0.6) {
+          const newProgress = Math.min(1, mech.activateProgress + 0.006);
+          const isMechActivated = newProgress >= 1;
+          updatedMechanisms[i] = { ...mech, activateProgress: newProgress, activated: isMechActivated };
 
-          if (isActivated) {
+          if (isMechActivated) {
             const targetPath = updatedPaths.find(p => p.id === mech.targetId);
             if (targetPath && !targetPath.revealed) {
               const pathIdx = updatedPaths.findIndex(p => p.id === mech.targetId);
@@ -1458,6 +1506,31 @@ export const useGameStore = create<GameState & {
       memoryTexts: updatedTexts,
       lightMechanisms: updatedMechanisms,
     });
+  },
+
+  checkGiantFlowerDiscovery: () => {
+    const { giantFlowers, butterfly, spawnCollectParticles } = get();
+    let newDiscoveries = false;
+
+    const updatedFlowers = giantFlowers.map(f => {
+      if (f.discovered) return f;
+      if (f.litIntensity < 0.4) return f;
+
+      const dx = butterfly.x - f.x;
+      const dy = butterfly.y - f.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < f.size + 70) {
+        newDiscoveries = true;
+        spawnCollectParticles(f.x, f.y, LIGHT_COLOR_MAP[f.reflectColor].particle);
+        return { ...f, discovered: true };
+      }
+      return f;
+    });
+
+    if (newDiscoveries) {
+      set({ giantFlowers: updatedFlowers });
+    }
   },
 }));
 

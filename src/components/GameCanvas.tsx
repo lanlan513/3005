@@ -127,6 +127,9 @@ export const GameCanvas = () => {
     setActiveLight,
     rotateLight,
     interactWithLight,
+    interactWithNearestLight,
+    findNearestLight,
+    checkGiantFlowerDiscovery,
   } = useGameStore();
 
   useEffect(() => {
@@ -154,17 +157,16 @@ export const GameCanvas = () => {
       }
 
       if (key === 'q') {
+        e.preventDefault();
         rotateLight(-0.08);
       }
       if (key === 'e') {
+        e.preventDefault();
         rotateLight(0.08);
       }
       if (key === 'l' && !e.repeat) {
         e.preventDefault();
-        const nearest = findNearestLight();
-        if (nearest) {
-          interactWithLight(nearest.id);
-        }
+        interactWithNearestLight();
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -181,7 +183,7 @@ export const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [dash, setGliding, openCompanionPanel]);
+  }, [dash, setGliding, openCompanionPanel, triggerHint, rotateLight, interactWithNearestLight]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -296,18 +298,6 @@ export const GameCanvas = () => {
     return () => clearInterval(interval);
   }, [isPlaying, spawnRandomFragments]);
 
-  const findNearestLight = (): LightSource | null => {
-    const nearest = lightSources
-      .filter(l => l.playerControlled)
-      .map(l => ({
-        light: l,
-        dist: Math.sqrt((butterfly.x - l.x) ** 2 + (butterfly.y - l.y) ** 2),
-      }))
-      .filter(item => item.dist < 120)
-      .sort((a, b) => a.dist - b.dist);
-    return nearest.length > 0 ? nearest[0].light : null;
-  };
-
   const gameLoop = () => {
     if (!isPlaying) return;
     timeRef.current += 0.016;
@@ -333,6 +323,7 @@ export const GameCanvas = () => {
     updateLightSources();
     updateGiantFlowers();
     updateLightPuzzleLogic();
+    checkGiantFlowerDiscovery();
     if (Math.random() < 0.008) {
       triggerHint();
     }
