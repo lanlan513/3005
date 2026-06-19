@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
 import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
@@ -13,12 +13,19 @@ import {
   getDashLevelByFragments,
   getGlideLevelByExploration
 } from '../data/abilities';
+import {
+  INITIAL_COMPANIONS,
+  getCompanionVisibilityBonus,
+  getCompanionDiscoveryBonus,
+  checkCompanionEncounter,
+  getCompanionEncounterProgress,
+} from '../data/companions';
 
 const FOG_CELL_SIZE = 40;
 const BASE_VISIBILITY_RADIUS = 120;
 const BASE_MAX_SPEED = 4;
-const BASE_ACCEL = 0.8;
-const FRAGMENT_RESPAWN_INTERVAL = 15000;
+export const BASE_ACCEL = 0.8;
+export const FRAGMENT_RESPAWN_INTERVAL = 15000;
 const DASH_COOLDOWN = 60;
 const MAX_GLIDE_ENERGY = 100;
 const GLIDE_ENERGY_REGEN = 0.5;
@@ -71,7 +78,7 @@ const createInitialFireflies = (): Firefly[] => {
 };
 
 const createInitialFlowers = (): Flower[] => {
-  return FLOWER_DATA.map((flowerData, index) => ({
+  return FLOWER_DATA.map((flowerData) => ({
     ...flowerData,
     swayPhase: Math.random() * Math.PI * 2,
     bloomPhase: 0,
@@ -165,6 +172,19 @@ export const useGameStore = create<GameState & {
   checkHiddenAreaDiscovery: () => void;
   closeAbilityUnlock: () => void;
   spawnDashParticles: () => void;
+  getActiveCompanion: () => ButterflyCompanion | null;
+  checkCompanionEncounters: () => void;
+  updateCompanionEncounterProgress: () => void;
+  updateCompanions: () => void;
+  unlockCompanion: (companionId: string) => void;
+  setActiveCompanion: (companionId: string | null) => void;
+  openCompanionPanel: () => void;
+  closeCompanionPanel: () => void;
+  closeCompanionEncounter: () => void;
+  acceptCompanion: () => void;
+  updateCompanionParticles: () => void;
+  spawnCompanionParticles: (x: number, y: number, color: string) => void;
+  checkCompanionProximity: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -199,6 +219,12 @@ export const useGameStore = create<GameState & {
   unlockAbility: null,
   baseSpeed: BASE_MAX_SPEED,
   baseVisibility: BASE_VISIBILITY_RADIUS,
+  companions: [...INITIAL_COMPANIONS],
+  activeCompanionId: null,
+  showCompanionPanel: false,
+  showCompanionEncounter: false,
+  encounterCompanion: null,
+  companionParticles: [],
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -227,15 +253,15 @@ export const useGameStore = create<GameState & {
     const friction = butterfly.isGliding ? 0.98 - abilityLevel.glideEfficiency * 0.03 : 0.92;
     let newX = butterfly.x + butterfly.vx;
     let newY = butterfly.y + butterfly.vy;
-    let newVx = butterfly.vx * friction;
-    let newVy = butterfly.vy * friction;
+    const newVx = butterfly.vx * friction;
+    const newVy = butterfly.vy * friction;
 
     const margin = 50;
     newX = Math.max(margin, Math.min(mapWidth - margin, newX));
     newY = Math.max(margin, Math.min(mapHeight - margin, newY));
 
-    let newDashCooldown = Math.max(0, butterfly.dashCooldown - 1);
-    let newIsDashing = butterfly.isDashing && newDashCooldown > DASH_COOLDOWN - 10;
+    const newDashCooldown = Math.max(0, butterfly.dashCooldown - 1);
+    const newIsDashing = butterfly.isDashing && newDashCooldown > DASH_COOLDOWN - 10;
 
     let newGlideEnergy = butterfly.glideEnergy;
     let newIsGliding = butterfly.isGliding;
@@ -470,13 +496,16 @@ export const useGameStore = create<GameState & {
   },
 
   updateFog: () => {
-    const { butterfly, fogGrid, fogCellSize, baseVisibility, abilityLevel } = get();
+    const { butterfly, fogGrid, fogCellSize, baseVisibility, abilityLevel, companions, activeCompanionId } = get();
     const newGrid = fogGrid.map((row) => row.map((cell) => ({ ...cell })));
     let newExplored = 0;
 
+    const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
+    const companionBonus = getCompanionVisibilityBonus(activeCompanion);
+
     const playerCol = Math.floor(butterfly.x / fogCellSize);
     const playerRow = Math.floor(butterfly.y / fogCellSize);
-    const visibilityRadius = baseVisibility * abilityLevel.visibilityMultiplier;
+    const visibilityRadius = baseVisibility * abilityLevel.visibilityMultiplier * companionBonus;
     const radiusInCells = Math.ceil(visibilityRadius / fogCellSize);
 
     for (let row = 0; row < newGrid.length; row++) {
@@ -505,7 +534,7 @@ export const useGameStore = create<GameState & {
   },
 
   spawnRandomFragments: () => {
-    const { fragments, collectedFragments } = get();
+    const { fragments } = get();
     const maxRandomFragments = 4;
     const currentRandomCount = fragments.filter((f) => f.id.startsWith('fragment-random-') && !f.collected).length;
     const toSpawn = maxRandomFragments - currentRandomCount;
@@ -675,8 +704,11 @@ export const useGameStore = create<GameState & {
   },
 
   checkHiddenAreaDiscovery: () => {
-    const { butterfly, hiddenAreas, abilities, abilityLevel } = get();
+    const { butterfly, hiddenAreas, abilities, companions, activeCompanionId } = get();
     
+    const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
+    const discoveryBonus = getCompanionDiscoveryBonus(activeCompanion);
+
     let hasChanges = false;
     const updatedAreas = hiddenAreas.map(area => {
       if (area.discovered) return area;
@@ -707,7 +739,7 @@ export const useGameStore = create<GameState & {
       const dy = butterfly.y - centerY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      const detectRadius = Math.max(area.width, area.height) / 2 + 50;
+      const detectRadius = (Math.max(area.width, area.height) / 2 + 50) * discoveryBonus;
       
       if (dist < detectRadius) {
         hasChanges = true;
@@ -750,6 +782,173 @@ export const useGameStore = create<GameState & {
       hiddenAreas: [...INITIAL_HIDDEN_AREAS],
       showAbilityUnlock: false,
       unlockAbility: null,
+      companions: [...INITIAL_COMPANIONS],
+      activeCompanionId: null,
+      showCompanionPanel: false,
+      showCompanionEncounter: false,
+      encounterCompanion: null,
+      companionParticles: [],
     });
+  },
+
+  getActiveCompanion: () => {
+    const { companions, activeCompanionId } = get();
+    return companions.find(c => c.id === activeCompanionId) || null;
+  },
+
+  checkCompanionEncounters: () => {
+    const { companions, collectedFragments, explorationProgress, abilities, showCompanionEncounter } = get();
+    
+    if (showCompanionEncounter) return;
+    
+    const collectedCount = collectedFragments.length;
+
+    for (const companion of companions) {
+      if (companion.unlocked) continue;
+      
+      const shouldEncounter = checkCompanionEncounter(companion, collectedCount, explorationProgress, abilities);
+      
+      if (shouldEncounter) {
+        set({
+          showCompanionEncounter: true,
+          encounterCompanion: { ...companion },
+        });
+        break;
+      }
+    }
+  },
+
+  updateCompanionEncounterProgress: () => {
+    const { companions, collectedFragments, explorationProgress, abilities } = get();
+    const collectedCount = collectedFragments.length;
+
+    const updatedCompanions = companions.map(companion => {
+      if (companion.unlocked) return companion;
+      
+      const progress = getCompanionEncounterProgress(companion, collectedCount, explorationProgress, abilities);
+      
+      return { ...companion, encounterProgress: progress };
+    });
+
+    set({ companions: updatedCompanions });
+  },
+
+  updateCompanions: () => {
+    const { companions, butterfly } = get();
+    const time = Date.now() / 1000;
+
+    const updatedCompanions = companions.map(companion => {
+      if (!companion.unlocked) return companion;
+      
+      const targetX = butterfly.x + Math.cos(time + companion.x * 0.01) * 60;
+      const targetY = butterfly.y + Math.sin(time * 0.8 + companion.y * 0.01) * 40 - 50;
+      
+      const lerpFactor = 0.05;
+      const newX = companion.x + (targetX - companion.x) * lerpFactor;
+      const newY = companion.y + (targetY - companion.y) * lerpFactor;
+
+      return { ...companion, x: newX, y: newY };
+    });
+
+    set({ companions: updatedCompanions });
+  },
+
+  unlockCompanion: (companionId: string) => {
+    const { companions } = get();
+    
+    const updatedCompanions = companions.map(companion => {
+      if (companion.id === companionId) {
+        return { ...companion, unlocked: true };
+      }
+      return companion;
+    });
+
+    set({ companions: updatedCompanions });
+  },
+
+  setActiveCompanion: (companionId: string | null) => {
+    set({ activeCompanionId: companionId });
+  },
+
+  openCompanionPanel: () => set({ showCompanionPanel: true }),
+
+  closeCompanionPanel: () => set({ showCompanionPanel: false }),
+
+  closeCompanionEncounter: () => set({ showCompanionEncounter: false, encounterCompanion: null }),
+
+  acceptCompanion: () => {
+    const { encounterCompanion, butterfly } = get();
+    if (!encounterCompanion) return;
+
+    get().unlockCompanion(encounterCompanion.id);
+    get().spawnCompanionParticles(encounterCompanion.x, encounterCompanion.y, encounterCompanion.color);
+    
+    set({
+      activeCompanionId: encounterCompanion.id,
+      showCompanionEncounter: false,
+      encounterCompanion: null,
+      companions: get().companions.map(c => 
+        c.id === encounterCompanion.id 
+          ? { ...c, x: butterfly.x, y: butterfly.y - 50, unlocked: true }
+          : c
+      ),
+    });
+  },
+
+  spawnCompanionParticles: (x: number, y: number, color: string) => {
+    const { companionParticles } = get();
+    const newParticles: Particle[] = [];
+    for (let i = 0; i < 30; i++) {
+      const angle = (Math.PI * 2 * i) / 30;
+      const speed = 2 + Math.random() * 4;
+      newParticles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        maxLife: 1,
+        color,
+        size: 4 + Math.random() * 6,
+      });
+    }
+    set({ companionParticles: [...companionParticles, ...newParticles] });
+  },
+
+  updateCompanionParticles: () => {
+    const { companionParticles } = get();
+    set({
+      companionParticles: companionParticles
+        .map((p) => ({
+          ...p,
+          x: p.x + p.vx,
+          y: p.y + p.vy,
+          vx: p.vx * 0.96,
+          vy: p.vy * 0.96,
+          life: p.life - 0.015,
+        }))
+        .filter((p) => p.life > 0),
+    });
+  },
+
+  checkCompanionProximity: () => {
+    const { butterfly, companions, showCompanionEncounter } = get();
+    if (showCompanionEncounter) return;
+
+    for (const companion of companions) {
+      if (companion.unlocked) continue;
+      
+      const dx = butterfly.x - companion.x;
+      const dy = butterfly.y - companion.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 80 && companion.encounterProgress >= 100) {
+        set({
+          showCompanionEncounter: true,
+          encounterCompanion: { ...companion },
+        });
+        break;
+      }
+    }
   },
 }));

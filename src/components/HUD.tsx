@@ -1,6 +1,13 @@
 import { useGameStore } from '../store/gameStore';
 import { BookOpen, Sparkles, Flower2, Zap, Wind } from 'lucide-react';
 import { FLOWER_DATA } from '../data/flowers';
+import { CompanionAbility } from '../types/game';
+
+const abilityIcon: Record<CompanionAbility, string> = {
+  light: '✨',
+  discover: '🔍',
+  hint: '💡',
+};
 
 export const HUD = () => {
   const { 
@@ -10,7 +17,13 @@ export const HUD = () => {
     openStoryBook,
     abilities,
     butterfly,
+    companions,
+    activeCompanionId,
+    openCompanionPanel,
   } = useGameStore();
+
+  const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
+  const unlockedCompanions = companions.filter(c => c.unlocked).length;
   const total = fragments.length;
   const collected = collectedFragments.length;
   const progress = (collected / total) * 100;
@@ -185,10 +198,10 @@ export const HUD = () => {
         </div>
       </div>
 
-      <div className="absolute top-6 right-6 pointer-events-auto">
+      <div className="absolute top-6 right-6 pointer-events-auto space-y-3">
         <button
           onClick={openStoryBook}
-          className="flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 hover:scale-105 active:scale-95 group"
+          className="w-full flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 hover:scale-105 active:scale-95 group"
         >
           <BookOpen className="w-5 h-5 text-purple-600 group-hover:text-purple-700" />
           <span className="text-purple-700 font-medium tracking-wider">故事集</span>
@@ -196,12 +209,48 @@ export const HUD = () => {
             {collected}
           </div>
         </button>
+
+        <button
+          onClick={openCompanionPanel}
+          className="w-full flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 hover:scale-105 active:scale-95 group"
+        >
+          <span className="text-xl">🦋</span>
+          <span className="text-purple-700 font-medium tracking-wider">伙伴</span>
+          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 text-white text-xs flex items-center justify-center font-bold">
+            {unlockedCompanions}
+          </div>
+        </button>
+
+        {activeCompanion && (
+          <div
+            className="rounded-2xl px-4 py-3 border shadow-lg"
+            style={{
+              backgroundColor: activeCompanion.color + '33',
+              borderColor: activeCompanion.color + '66',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🦋</span>
+              <span
+                className="font-bold text-sm"
+                style={{ color: activeCompanion.color }}
+              >
+                {activeCompanion.name}
+              </span>
+              <span className="text-xs">携带中</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-white/80">
+              <span>{abilityIcon[activeCompanion.ability]}</span>
+              <span>+{Math.round(activeCompanion.abilityPower * 100)}%</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 键伙伴面板 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
           </p>
         </div>
       </div>

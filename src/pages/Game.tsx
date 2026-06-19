@@ -5,6 +5,8 @@ import { StoryModal } from '../components/StoryModal';
 import { StoryBook } from '../components/StoryBook';
 import { FlowerCard } from '../components/FlowerCard';
 import { AbilityUnlockModal } from '../components/AbilityUnlockModal';
+import { CompanionEncounter } from '../components/CompanionEncounter';
+import { CompanionPanel } from '../components/CompanionPanel';
 
 export const Game = () => {
   return (
@@ -16,6 +18,8 @@ export const Game = () => {
       <StoryBook />
       <FlowerCard />
       <AbilityUnlockModal />
+      <CompanionEncounter />
+      <CompanionPanel />
     </div>
   );
 };

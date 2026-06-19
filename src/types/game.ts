@@ -126,7 +126,39 @@ export interface FogCell {
   visibility: number;
 }
 
-export interface GameState {
+export type CompanionAbility = 'light' | 'discover' | 'hint';
+
+export type CompanionPersonality = 'curious' | 'calm' | 'playful' | 'wise' | 'shy';
+
+export interface ButterflyCompanion {
+  id: string;
+  name: string;
+  personality: CompanionPersonality;
+  ability: CompanionAbility;
+  description: string;
+  color: string;
+  wingColor: string;
+  spotColor: string;
+  unlocked: boolean;
+  x: number;
+  y: number;
+  encounterCondition: string;
+  encounterProgress: number;
+  encounterTarget: number;
+  abilityPower: number;
+  quote: string;
+}
+
+export interface CompanionState {
+  companions: ButterflyCompanion[];
+  activeCompanionId: string | null;
+  showCompanionPanel: boolean;
+  showCompanionEncounter: boolean;
+  encounterCompanion: ButterflyCompanion | null;
+  companionParticles: Particle[];
+}
+
+export interface GameState extends CompanionState {
   butterfly: Butterfly;
   fragments: Fragment[];
   collectedFragments: string[];

@@ -47,7 +47,7 @@ export const MiniMap = () => {
           const h = fogCellSize * scaleY + 1;
 
           const brightness = Math.floor(60 + cell.visibility * 80);
-          ctx.fillStyle = `rgba(120, 100, 180, ${0.3 + cell.visibility * 0.5})`;
+          ctx.fillStyle = `rgba(${brightness}, ${brightness - 20}, ${brightness + 40}, ${0.3 + cell.visibility * 0.5})`;
           ctx.fillRect(x, y, w, h);
         }
       }

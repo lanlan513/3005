@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree, HiddenArea } from '../types/game';
+import { Flower, Tree, ButterflyCompanion } from '../types/game';
+import { BASE_ACCEL, FRAGMENT_RESPAWN_INTERVAL } from '../store/gameStore';
 
 const DECORATIVE_FLOWER_COUNT = 80;
 const TREE_COUNT = 18;
@@ -73,7 +74,9 @@ export const GameCanvas = () => {
     fogCellSize,
     hiddenAreas,
     abilities,
-    abilityLevel,
+    companions,
+    activeCompanionId,
+    companionParticles,
     setButterflyVelocity,
     updateButterfly,
     updateFragments,
@@ -95,6 +98,12 @@ export const GameCanvas = () => {
     updateAbilityLevels,
     checkAbilityUnlocks,
     checkHiddenAreaDiscovery,
+    updateCompanions,
+    updateCompanionEncounterProgress,
+    checkCompanionEncounters,
+    checkCompanionProximity,
+    updateCompanionParticles,
+    openCompanionPanel,
   } = useGameStore();
 
   useEffect(() => {
@@ -109,6 +118,11 @@ export const GameCanvas = () => {
       
       if (key === 'shift') {
         setGliding(true);
+      }
+      
+      if (key === 'b' && !e.repeat) {
+        e.preventDefault();
+        openCompanionPanel();
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -125,7 +139,7 @@ export const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [dash, setGliding]);
+  }, [dash, setGliding, openCompanionPanel]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -228,8 +242,7 @@ export const GameCanvas = () => {
       const len = Math.sqrt(dx * dx + dy * dy);
       dx /= len;
       dy /= len;
-      const accel = 0.8;
-      setButterflyVelocity(butterfly.vx + dx * accel, butterfly.vy + dy * accel);
+      setButterflyVelocity(butterfly.vx + dx * BASE_ACCEL, butterfly.vy + dy * BASE_ACCEL);
     }
   };
 
@@ -237,7 +250,7 @@ export const GameCanvas = () => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
       spawnRandomFragments();
-    }, 15000);
+    }, FRAGMENT_RESPAWN_INTERVAL);
     return () => clearInterval(interval);
   }, [isPlaying, spawnRandomFragments]);
 
@@ -254,6 +267,11 @@ export const GameCanvas = () => {
     updateAbilityLevels();
     checkAbilityUnlocks();
     checkHiddenAreaDiscovery();
+    updateCompanions();
+    updateCompanionEncounterProgress();
+    checkCompanionEncounters();
+    checkCompanionProximity();
+    updateCompanionParticles();
     updateParticles();
     updatePetals();
     updateFireflies();
@@ -297,11 +315,14 @@ export const GameCanvas = () => {
     drawHiddenAreas(ctx, offsetX, offsetY);
     drawTrees(ctx, offsetX, offsetY);
     drawFlowers(ctx, offsetX, offsetY);
+    drawUnlockedCompanions(ctx, offsetX, offsetY);
+    drawLockedCompanions(ctx, offsetX, offsetY);
     drawFireflies(ctx, offsetX, offsetY);
     drawFragments(ctx, offsetX, offsetY);
     drawPetals(ctx, offsetX, offsetY);
     drawButterfly(ctx, offsetX, offsetY);
     drawParticles(ctx, offsetX, offsetY);
+    drawCompanionParticles(ctx, offsetX, offsetY);
     drawMapBorder(ctx, offsetX, offsetY);
     drawFog(ctx, offsetX, offsetY);
   };
@@ -494,13 +515,14 @@ export const GameCanvas = () => {
 
     if (isInteractive && flower.unlocked) {
       const glowIntensity = (Math.sin(flower.pulsePhase * 0.5) + 1) / 2;
-      const gradient = ctx.createRadialGradient(x + sway, y, 0, x + sway, y, flower.size * 2.5);
+      const glowRadius = flower.size * (2 + glowIntensity);
+      const gradient = ctx.createRadialGradient(x + sway, y, 0, x + sway, y, glowRadius);
       gradient.addColorStop(0, flower.color + '66');
       gradient.addColorStop(0.5, flower.color + '22');
       gradient.addColorStop(1, flower.color + '00');
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(x + sway, y, flower.size * 2.5, 0, Math.PI * 2);
+      ctx.arc(x + sway, y, glowRadius, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -992,6 +1014,224 @@ export const GameCanvas = () => {
     ctx.setLineDash([20, 15]);
     ctx.strokeRect(ox, oy, mapWidth, mapHeight);
     ctx.restore();
+  };
+
+  const drawCompanionButterfly = (
+    ctx: CanvasRenderingContext2D,
+    companion: ButterflyCompanion,
+    ox: number,
+    oy: number,
+    isActive: boolean = false
+  ) => {
+    const x = companion.x + ox;
+    const y = companion.y + oy;
+    if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) return;
+
+    const time = timeRef.current;
+    const wingFlap = Math.sin(time * 6 + companion.x * 0.01) * 0.5;
+    const bobOffset = Math.sin(time * 2 + companion.y * 0.01) * 3;
+
+    ctx.save();
+    ctx.translate(x, y + bobOffset);
+
+    if (isActive) {
+      const pulseScale = 1 + Math.sin(time * 3) * 0.05;
+      ctx.scale(pulseScale, pulseScale);
+      
+      const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 40);
+      glowGradient.addColorStop(0, companion.color + '66');
+      glowGradient.addColorStop(0.5, companion.color + '22');
+      glowGradient.addColorStop(1, companion.color + '00');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, 40, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = '#4A3728';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 2.5, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -12, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#4A3728';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-2, -13);
+    ctx.quadraticCurveTo(-6, -18, -4, -21);
+    ctx.moveTo(2, -13);
+    ctx.quadraticCurveTo(6, -18, 4, -21);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.rotate(-wingFlap);
+    ctx.fillStyle = companion.wingColor;
+    ctx.beginPath();
+    ctx.ellipse(-12, -5, 14, 18, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = companion.color;
+    ctx.beginPath();
+    ctx.ellipse(-10, -8, 8, 10, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = companion.spotColor;
+    ctx.beginPath();
+    ctx.arc(-12, -10, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(wingFlap);
+    ctx.fillStyle = companion.wingColor;
+    ctx.beginPath();
+    ctx.ellipse(12, -5, 14, 18, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = companion.color;
+    ctx.beginPath();
+    ctx.ellipse(10, -8, 8, 10, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = companion.spotColor;
+    ctx.beginPath();
+    ctx.arc(12, -10, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(-wingFlap * 0.6);
+    ctx.fillStyle = companion.color;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(-7, 8, 7, 10, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(wingFlap * 0.6);
+    ctx.fillStyle = companion.color;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(7, 8, 7, 10, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  };
+
+  const drawUnlockedCompanions = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const companion of companions) {
+      if (!companion.unlocked) continue;
+      const isActive = companion.id === activeCompanionId;
+      drawCompanionButterfly(ctx, companion, ox, oy, isActive);
+    }
+  };
+
+  const drawLockedCompanions = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const companion of companions) {
+      if (companion.unlocked) continue;
+      
+      const x = companion.x + ox;
+      const y = companion.y + oy;
+      if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) continue;
+
+      const time = timeRef.current;
+      const bobOffset = Math.sin(time * 1.5 + companion.y * 0.01) * 5;
+
+      ctx.save();
+      ctx.translate(x, y + bobOffset);
+
+      if (companion.encounterProgress >= 100) {
+        const pulseAlpha = 0.3 + Math.sin(time * 4) * 0.2;
+        const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 50);
+        glowGradient.addColorStop(0, companion.color + Math.floor(pulseAlpha * 255).toString(16).padStart(2, '0'));
+        glowGradient.addColorStop(0.5, companion.color + '22');
+        glowGradient.addColorStop(1, companion.color + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, 50, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = companion.color + '88';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 35, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = companion.color;
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', 0, 0);
+
+        ctx.fillStyle = companion.color + 'CC';
+        ctx.font = '11px sans-serif';
+        ctx.fillText('靠近遇见', 0, 30);
+      } else {
+        const progressAlpha = 0.15 + (companion.encounterProgress / 100) * 0.2;
+        ctx.globalAlpha = progressAlpha;
+
+        const questionMarkScale = 0.5 + (companion.encounterProgress / 100) * 0.5;
+        ctx.save();
+        ctx.scale(questionMarkScale, questionMarkScale);
+        
+        ctx.fillStyle = companion.color + '66';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', 0, 0);
+        ctx.restore();
+
+        ctx.globalAlpha = 1;
+        const barWidth = 40;
+        const barHeight = 4;
+        const progressWidth = (companion.encounterProgress / 100) * barWidth;
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(-barWidth / 2, 15, barWidth, barHeight);
+        
+        ctx.fillStyle = companion.color;
+        ctx.fillRect(-barWidth / 2, 15, progressWidth, barHeight);
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawCompanionParticles = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const p of companionParticles) {
+      const x = p.x + ox;
+      const y = p.y + oy;
+      const lifeRatio = p.life / p.maxLife;
+      const size = p.size * lifeRatio;
+      
+      ctx.save();
+      
+      ctx.globalAlpha = lifeRatio * 0.6;
+      const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+      outerGlow.addColorStop(0, p.color + 'AA');
+      outerGlow.addColorStop(0.3, p.color + '44');
+      outerGlow.addColorStop(1, p.color + '00');
+      ctx.fillStyle = outerGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.globalAlpha = lifeRatio;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.globalAlpha = lifeRatio * 0.8;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(x - size * 0.3, y - size * 0.3, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
+    }
   };
 
   const drawFog = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
