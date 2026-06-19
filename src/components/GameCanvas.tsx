@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree, ButterflyCompanion, DreamRegion, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism } from '../types/game';
+import { Flower, Tree, ButterflyCompanion, DreamRegion, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism, PhantomTrail, EchoPuzzle } from '../types/game';
 import { BASE_ACCEL, FRAGMENT_RESPAWN_INTERVAL } from '../store/gameStore';
 import { LIGHT_COLOR_MAP } from '../data/lightPuzzle';
 
@@ -130,6 +130,17 @@ export const GameCanvas = () => {
     interactWithNearestLight,
     findNearestLight,
     checkGiantFlowerDiscovery,
+    phantomTrails,
+    echoPuzzles,
+    echoParticles,
+    showEchoHint,
+    echoHintText,
+    recordPhantomSnapshot,
+    updatePhantomTrails,
+    checkEchoPuzzles,
+    updateEchoPuzzles,
+    updateEchoParticles,
+    triggerEchoReplay,
   } = useGameStore();
 
   useEffect(() => {
@@ -168,6 +179,15 @@ export const GameCanvas = () => {
         e.preventDefault();
         interactWithNearestLight();
       }
+      if (key === 'r' && !e.repeat) {
+        e.preventDefault();
+        const { phantomTrails: trails } = useGameStore.getState();
+        const playingTrail = trails.find(t => t.isPlaying);
+        if (!playingTrail && trails.length > 0) {
+          const lastTrail = trails[trails.length - 1];
+          triggerEchoReplay(lastTrail.id);
+        }
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -183,7 +203,7 @@ export const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [dash, setGliding, openCompanionPanel, triggerHint, rotateLight, interactWithNearestLight]);
+  }, [dash, setGliding, openCompanionPanel, triggerHint, rotateLight, interactWithNearestLight, triggerEchoReplay]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -324,6 +344,11 @@ export const GameCanvas = () => {
     updateGiantFlowers();
     updateLightPuzzleLogic();
     checkGiantFlowerDiscovery();
+    recordPhantomSnapshot();
+    updatePhantomTrails();
+    checkEchoPuzzles();
+    updateEchoPuzzles();
+    updateEchoParticles();
     if (Math.random() < 0.008) {
       triggerHint();
     }
@@ -373,6 +398,9 @@ export const GameCanvas = () => {
     drawHiddenPaths(ctx, offsetX, offsetY);
     drawLightBeams(ctx, offsetX, offsetY);
     drawLightMechanisms(ctx, offsetX, offsetY);
+    drawEchoPuzzles(ctx, offsetX, offsetY);
+    drawPhantomTrails(ctx, offsetX, offsetY);
+    drawEchoParticles(ctx, offsetX, offsetY);
     drawMemoryTexts(ctx, offsetX, offsetY);
     drawTrees(ctx, offsetX, offsetY);
     drawFlowers(ctx, offsetX, offsetY);
@@ -2083,6 +2111,307 @@ export const GameCanvas = () => {
       ctx.textAlign = 'center';
       const labelMap: Record<string, string> = { gate: '门', bridge: '桥', portal: '传送', bloom: '绽放' };
       ctx.fillText(labelMap[mech.type] || mech.type, x, y + mech.size + 15);
+
+      ctx.restore();
+    }
+  };
+
+  const drawEchoPuzzles = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const puzzle of echoPuzzles) {
+      const px = puzzle.x + ox;
+      const py = puzzle.y + oy;
+      if (px < -200 || px > viewportWidth + 200 || py < -200 || py > viewportHeight + 200) continue;
+
+      const pulse = (Math.sin(puzzle.pulsePhase) + 1) / 2;
+      const time = timeRef.current;
+
+      ctx.save();
+
+      if (puzzle.activated) {
+        const glowRadius = puzzle.size * (2 + pulse * 0.5);
+        const glowGradient = ctx.createRadialGradient(px, py, 0, px, py, glowRadius);
+        glowGradient.addColorStop(0, '#CE93D8AA');
+        glowGradient.addColorStop(0.5, '#9B7EDC44');
+        glowGradient.addColorStop(1, '#9B7EDC00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(px, py, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#9B7EDC';
+        ctx.beginPath();
+        ctx.arc(px, py, puzzle.size * puzzle.activateProgress, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(px, py, puzzle.size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = `rgba(155, 126, 220, ${0.08 + pulse * 0.06})`;
+        ctx.beginPath();
+        ctx.arc(px, py, puzzle.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(155, 126, 220, ${0.3 + pulse * 0.2})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.lineDashOffset = -time * 10;
+        ctx.beginPath();
+        ctx.arc(px, py, puzzle.size, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (puzzle.activateProgress > 0) {
+          const progressAngle = puzzle.activateProgress * Math.PI * 2;
+          ctx.strokeStyle = '#CE93D8';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(px, py, puzzle.size + 6, -Math.PI / 2, -Math.PI / 2 + progressAngle);
+          ctx.stroke();
+        }
+
+        const phantomZoneX = puzzle.phantomZoneX + ox;
+        const phantomZoneY = puzzle.phantomZoneY + oy;
+        const butterflyZoneX = puzzle.butterflyZoneX + ox;
+        const butterflyZoneY = puzzle.butterflyZoneY + oy;
+
+        const phantomAlpha = 0.1 + pulse * 0.08;
+        ctx.fillStyle = `rgba(155, 126, 220, ${phantomAlpha})`;
+        ctx.beginPath();
+        ctx.arc(phantomZoneX, phantomZoneY, puzzle.phantomZoneRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(155, 126, 220, ${phantomAlpha * 2})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = -time * 8;
+        ctx.beginPath();
+        ctx.arc(phantomZoneX, phantomZoneY, puzzle.phantomZoneRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = 'rgba(206, 147, 216, 0.5)';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('幻影区', phantomZoneX, phantomZoneY + 3);
+
+        const butterflyAlpha = 0.1 + pulse * 0.08;
+        ctx.fillStyle = `rgba(206, 147, 216, ${butterflyAlpha})`;
+        ctx.beginPath();
+        ctx.arc(butterflyZoneX, butterflyZoneY, puzzle.butterflyZoneRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(206, 147, 216, ${butterflyAlpha * 2})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = time * 8;
+        ctx.beginPath();
+        ctx.arc(butterflyZoneX, butterflyZoneY, puzzle.butterflyZoneRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = 'rgba(206, 147, 216, 0.5)';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('蝴蝶区', butterflyZoneX, butterflyZoneY + 3);
+
+        ctx.strokeStyle = 'rgba(155, 126, 220, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(phantomZoneX, phantomZoneY);
+        ctx.lineTo(px, py);
+        ctx.lineTo(butterflyZoneX, butterflyZoneY);
+        ctx.stroke();
+      }
+
+      const typeLabelMap: Record<string, string> = { memory: '记忆', resonance: '共振', mirror: '镜像' };
+      ctx.fillStyle = '#9B7EDCCC';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(typeLabelMap[puzzle.type] || puzzle.type, px, py + puzzle.size + 15);
+
+      ctx.restore();
+    }
+  };
+
+  const drawPhantomTrails = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const trail of phantomTrails) {
+      if (!trail.isPlaying || trail.snapshots.length === 0) continue;
+
+      const snapshotIndex = Math.floor(trail.activeSnapshotIndex);
+      const snapshot = trail.snapshots[Math.min(snapshotIndex, trail.snapshots.length - 1)];
+      if (!snapshot) continue;
+
+      const x = snapshot.x + ox;
+      const y = snapshot.y + oy;
+      if (x < -100 || x > viewportWidth + 100 || y < -100 || y > viewportHeight + 100) continue;
+
+      const time = timeRef.current;
+      const fadeAlpha = Math.min(trail.fadePhase, 0.6);
+
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha;
+
+      const trailGlow = ctx.createRadialGradient(x, y, 0, x, y, 50);
+      trailGlow.addColorStop(0, 'rgba(155, 126, 220, 0.3)');
+      trailGlow.addColorStop(0.5, 'rgba(155, 126, 220, 0.1)');
+      trailGlow.addColorStop(1, 'rgba(155, 126, 220, 0)');
+      ctx.fillStyle = trailGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, 50, 0, Math.PI * 2);
+      ctx.fill();
+
+      const historyCount = Math.min(20, snapshotIndex);
+      if (historyCount > 1) {
+        ctx.beginPath();
+        const startIdx = Math.max(0, snapshotIndex - historyCount);
+        ctx.moveTo(trail.snapshots[startIdx].x + ox, trail.snapshots[startIdx].y + oy);
+        for (let i = startIdx + 1; i <= snapshotIndex; i++) {
+          ctx.lineTo(trail.snapshots[i].x + ox, trail.snapshots[i].y + oy);
+        }
+        ctx.strokeStyle = 'rgba(155, 126, 220, 0.25)';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        for (let i = startIdx; i <= snapshotIndex; i += 3) {
+          const alpha = 0.1 + (i - startIdx) / historyCount * 0.2;
+          ctx.fillStyle = `rgba(155, 126, 220, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(trail.snapshots[i].x + ox, trail.snapshots[i].y + oy, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(snapshot.rotation + Math.PI / 2);
+
+      const wingFlap = Math.sin(snapshot.wingPhase) * 0.5;
+      const bodyColor = snapshot.isDashing ? '#7B5EA7' : '#6A4C93';
+      const wingColor = snapshot.isDashing ? '#B39DDB' : '#9B7EDC';
+      const wingHighlight = '#D1C4E9';
+      const spotColor = '#E1BEE7';
+
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 3, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -14, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = bodyColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-2, -15);
+      ctx.quadraticCurveTo(-5, -22, -3, -25);
+      ctx.moveTo(2, -15);
+      ctx.quadraticCurveTo(5, -22, 3, -25);
+      ctx.stroke();
+
+      ctx.save();
+      ctx.rotate(-wingFlap);
+      ctx.fillStyle = wingColor;
+      ctx.beginPath();
+      ctx.ellipse(-14, -6, 16, 22, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = wingHighlight;
+      ctx.beginPath();
+      ctx.ellipse(-11, -9, 9, 13, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = spotColor;
+      ctx.beginPath();
+      ctx.arc(-14, -11, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.rotate(wingFlap);
+      ctx.fillStyle = wingColor;
+      ctx.beginPath();
+      ctx.ellipse(14, -6, 16, 22, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = wingHighlight;
+      ctx.beginPath();
+      ctx.ellipse(11, -9, 9, 13, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = spotColor;
+      ctx.beginPath();
+      ctx.arc(14, -11, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = wingColor;
+      ctx.globalAlpha = fadeAlpha * 0.7;
+      ctx.save();
+      ctx.rotate(-wingFlap * 0.6);
+      ctx.beginPath();
+      ctx.ellipse(-8, 9, 6, 9, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.rotate(wingFlap * 0.6);
+      ctx.beginPath();
+      ctx.ellipse(8, 9, 6, 9, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore();
+
+      ctx.globalAlpha = fadeAlpha * 0.8;
+      ctx.fillStyle = '#D1C4E9';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('过去的幻影', x, y - 35);
+
+      if (snapshot.action === 'dash') {
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
+        ctx.beginPath();
+        ctx.arc(x, y, 25, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (snapshot.action === 'glide') {
+        ctx.strokeStyle = 'rgba(135, 206, 235, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 30, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawEchoParticles = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const p of echoParticles) {
+      const x = p.x + ox;
+      const y = p.y + oy;
+      const lifeRatio = p.life / p.maxLife;
+      const size = p.size * lifeRatio;
+
+      ctx.save();
+
+      ctx.globalAlpha = lifeRatio * 0.6;
+      const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+      outerGlow.addColorStop(0, p.color + 'AA');
+      outerGlow.addColorStop(0.3, p.color + '44');
+      outerGlow.addColorStop(1, p.color + '00');
+      ctx.fillStyle = outerGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = lifeRatio;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = lifeRatio * 0.8;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(x - size * 0.3, y - size * 0.3, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
 
       ctx.restore();
     }

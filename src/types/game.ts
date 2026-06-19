@@ -303,6 +303,59 @@ export interface LightMechanism {
   pulsePhase: number;
 }
 
+export interface PhantomSnapshot {
+  x: number;
+  y: number;
+  rotation: number;
+  wingPhase: number;
+  isDashing: boolean;
+  isGliding: boolean;
+  action: 'move' | 'dash' | 'glide' | 'interact' | 'idle';
+}
+
+export interface PhantomTrail {
+  id: string;
+  snapshots: PhantomSnapshot[];
+  regionId: string;
+  createdAt: number;
+  playCount: number;
+  activeSnapshotIndex: number;
+  isPlaying: boolean;
+  fadePhase: number;
+}
+
+export interface EchoPuzzle {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  phantomZoneX: number;
+  phantomZoneY: number;
+  phantomZoneRadius: number;
+  butterflyZoneX: number;
+  butterflyZoneY: number;
+  butterflyZoneRadius: number;
+  requiredTrailRegionId: string;
+  activated: boolean;
+  activateProgress: number;
+  type: 'memory' | 'resonance' | 'mirror';
+  targetId: string;
+  pulsePhase: number;
+  hint: string;
+}
+
+export interface MemoryEchoState {
+  phantomTrails: PhantomTrail[];
+  echoPuzzles: EchoPuzzle[];
+  isRecording: boolean;
+  currentRecordingSnapshots: PhantomSnapshot[];
+  currentRecordingRegionId: string | null;
+  recordingFrameCounter: number;
+  echoParticles: Particle[];
+  showEchoHint: boolean;
+  echoHintText: string | null;
+}
+
 export interface LightPuzzleState {
   lightSources: LightSource[];
   giantFlowers: GiantFlower[];
@@ -313,7 +366,7 @@ export interface LightPuzzleState {
   showLightPuzzleHint: boolean;
 }
 
-export interface GameState extends CompanionState, LightPuzzleState {
+export interface GameState extends CompanionState, LightPuzzleState, MemoryEchoState {
   butterfly: Butterfly;
   fragments: Fragment[];
   collectedFragments: string[];

@@ -30,6 +30,10 @@ export const HUD = () => {
     lightMechanisms,
     activeLightId,
     showLightPuzzleHint,
+    phantomTrails,
+    echoPuzzles,
+    showEchoHint,
+    echoHintText,
   } = useGameStore();
 
   const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
@@ -65,6 +69,11 @@ export const HUD = () => {
   const activatedMechanisms = lightMechanisms.filter(m => m.activated).length;
   const discoveredGiantFlowers = giantFlowers.filter(f => f.discovered).length;
   const lightColorName: Record<string, string> = { gold: '金光', blue: '蓝光', pink: '粉光' };
+
+  const recordedTrails = phantomTrails.length;
+  const playingTrails = phantomTrails.filter(t => t.isPlaying).length;
+  const activatedEchoes = echoPuzzles.filter(e => e.activated).length;
+  const echoTypeName: Record<string, string> = { memory: '记忆', resonance: '共振', mirror: '镜像' };
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
@@ -274,6 +283,38 @@ export const HUD = () => {
             </div>
           )}
         </div>
+
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">👻</span>
+            <span className="text-purple-700 font-medium tracking-wider">记忆回响</span>
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">📹</span>
+              <span className="text-purple-600 flex-1">已记录轨迹</span>
+              <span className="text-purple-500 font-bold">{recordedTrails}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">👻</span>
+              <span className="text-purple-600 flex-1">活跃幻影</span>
+              <span className="text-purple-500 font-bold">{playingTrails}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">✨</span>
+              <span className="text-purple-600 flex-1">回响解谜</span>
+              <span className="text-purple-500 font-bold">{activatedEchoes}/{echoPuzzles.length}</span>
+            </div>
+          </div>
+          {showEchoHint && echoHintText && (
+            <div className="mt-3 pt-3 border-t border-purple-200/50">
+              <p className="text-xs text-purple-600 leading-relaxed">{echoHintText}</p>
+            </div>
+          )}
+          <div className="mt-2 flex gap-1">
+            <span className="text-xs text-purple-600/70 bg-purple-100/50 px-1.5 py-0.5 rounded">R 回响</span>
+          </div>
+        </div>
       </div>
 
       <div className="absolute top-6 right-6 pointer-events-auto space-y-3">
@@ -353,7 +394,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 伙伴 · H 提示 · L 操控光源 · Q/E 旋转光线 · 探索迷雾地图 · 收集记忆碎片 · 光影谜题
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 伙伴 · H 提示 · L 操控光源 · Q/E 旋转光线 · R 回响重播 · 探索迷雾地图 · 收集记忆碎片 · 光影谜题 · 记忆回响
           </p>
         </div>
       </div>
