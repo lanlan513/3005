@@ -17,6 +17,8 @@ export const MiniMap = () => {
     viewportWidth,
     viewportHeight,
     explorationProgress,
+    hiddenAreas,
+    abilities,
   } = useGameStore();
 
   const miniMapWidth = 180;
@@ -121,6 +123,39 @@ export const MiniMap = () => {
       }
     }
 
+    for (const area of hiddenAreas) {
+      const ax = area.x * scaleX;
+      const ay = area.y * scaleY;
+      const aw = area.width * scaleX;
+      const ah = area.height * scaleY;
+
+      const ability = abilities.find(a => a.id === area.requiredAbility);
+      const canDiscover = ability && ability.unlocked;
+
+      if (area.discovered) {
+        ctx.fillStyle = area.color + '40';
+        ctx.fillRect(ax, ay, aw, ah);
+        ctx.strokeStyle = area.color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = area.color;
+        ctx.font = '8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⭐', ax + aw / 2, ay + ah / 2 + 3);
+      } else if (canDiscover) {
+        ctx.fillStyle = area.color + '15';
+        ctx.fillRect(ax, ay, aw, ah);
+        ctx.strokeStyle = area.color + '40';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 2]);
+        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.setLineDash([]);
+      }
+    }
+
     const px = butterfly.x * scaleX;
     const py = butterfly.y * scaleY;
     ctx.fillStyle = '#FFD93D';
@@ -183,6 +218,10 @@ export const MiniMap = () => {
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-purple-400/50" />
             <span className="text-purple-600">已探索</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded border-2 border-dashed border-yellow-400" />
+            <span className="text-purple-600">隐藏区域</span>
           </div>
         </div>
       </div>

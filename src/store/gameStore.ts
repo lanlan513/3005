@@ -1,12 +1,28 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
 import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
+import { 
+  INITIAL_ABILITIES, 
+  INITIAL_HIDDEN_AREAS, 
+  getAbilityLevelStats, 
+  checkAbilityUnlock,
+  getSpeedLevelByFragments,
+  getVisibilityLevelByExploration,
+  getDashLevelByFragments,
+  getGlideLevelByExploration
+} from '../data/abilities';
 
 const FOG_CELL_SIZE = 40;
-const VISIBILITY_RADIUS = 120;
+const BASE_VISIBILITY_RADIUS = 120;
+const BASE_MAX_SPEED = 4;
+const BASE_ACCEL = 0.8;
 const FRAGMENT_RESPAWN_INTERVAL = 15000;
+const DASH_COOLDOWN = 60;
+const MAX_GLIDE_ENERGY = 100;
+const GLIDE_ENERGY_REGEN = 0.5;
+const GLIDE_ENERGY_DRAIN = 0.8;
 
 const createInitialButterfly = (): Butterfly => ({
   x: 200,
@@ -15,6 +31,10 @@ const createInitialButterfly = (): Butterfly => ({
   vy: 0,
   rotation: -Math.PI / 4,
   wingPhase: 0,
+  isDashing: false,
+  dashCooldown: 0,
+  isGliding: false,
+  glideEnergy: MAX_GLIDE_ENERGY,
 });
 
 const createInitialPetals = (): Petal[] => {
@@ -138,6 +158,13 @@ export const useGameStore = create<GameState & {
   updateFog: () => void;
   spawnRandomFragments: () => void;
   updateExplorationProgress: () => void;
+  dash: () => void;
+  setGliding: (isGliding: boolean) => void;
+  updateAbilityLevels: () => void;
+  checkAbilityUnlocks: () => void;
+  checkHiddenAreaDiscovery: () => void;
+  closeAbilityUnlock: () => void;
+  spawnDashParticles: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -165,39 +192,61 @@ export const useGameStore = create<GameState & {
   exploredCells: 0,
   totalCells: initialFog.total,
   explorationProgress: 0,
+  abilities: [...INITIAL_ABILITIES],
+  abilityLevel: getAbilityLevelStats(1, 1, 0, 0),
+  hiddenAreas: [...INITIAL_HIDDEN_AREAS],
+  showAbilityUnlock: false,
+  unlockAbility: null,
+  baseSpeed: BASE_MAX_SPEED,
+  baseVisibility: BASE_VISIBILITY_RADIUS,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
   setButterflyVelocity: (vx, vy) => {
-    const { butterfly } = get();
+    const { butterfly, abilityLevel, baseSpeed } = get();
     const speed = Math.sqrt(vx * vx + vy * vy);
-    const maxSpeed = 4;
+    const maxSpeed = baseSpeed * abilityLevel.speedMultiplier;
     if (speed > maxSpeed) {
       vx = (vx / speed) * maxSpeed;
       vy = (vy / speed) * maxSpeed;
     }
+    const wingSpeed = speed > 0.1 ? 0.4 : 0.15;
     set({
       butterfly: {
         ...butterfly,
         vx,
         vy,
         rotation: speed > 0.1 ? Math.atan2(vy, vx) : butterfly.rotation,
-        wingPhase: butterfly.wingPhase + (speed > 0.1 ? 0.4 : 0.15),
+        wingPhase: butterfly.wingPhase + wingSpeed * (butterfly.isGliding ? 0.5 : 1),
       },
     });
   },
 
   updateButterfly: () => {
-    const { butterfly, mapWidth, mapHeight } = get();
-    const friction = 0.92;
+    const { butterfly, mapWidth, mapHeight, abilityLevel } = get();
+    const friction = butterfly.isGliding ? 0.98 - abilityLevel.glideEfficiency * 0.03 : 0.92;
     let newX = butterfly.x + butterfly.vx;
     let newY = butterfly.y + butterfly.vy;
-    const newVx = butterfly.vx * friction;
-    const newVy = butterfly.vy * friction;
+    let newVx = butterfly.vx * friction;
+    let newVy = butterfly.vy * friction;
 
     const margin = 50;
     newX = Math.max(margin, Math.min(mapWidth - margin, newX));
     newY = Math.max(margin, Math.min(mapHeight - margin, newY));
+
+    let newDashCooldown = Math.max(0, butterfly.dashCooldown - 1);
+    let newIsDashing = butterfly.isDashing && newDashCooldown > DASH_COOLDOWN - 10;
+
+    let newGlideEnergy = butterfly.glideEnergy;
+    let newIsGliding = butterfly.isGliding;
+    if (butterfly.isGliding && abilityLevel.glideEfficiency > 0) {
+      newGlideEnergy = Math.max(0, butterfly.glideEnergy - GLIDE_ENERGY_DRAIN);
+      if (newGlideEnergy <= 0) {
+        newIsGliding = false;
+      }
+    } else {
+      newGlideEnergy = Math.min(MAX_GLIDE_ENERGY, butterfly.glideEnergy + GLIDE_ENERGY_REGEN);
+    }
 
     set({
       butterfly: {
@@ -206,7 +255,11 @@ export const useGameStore = create<GameState & {
         y: newY,
         vx: newVx,
         vy: newVy,
-        wingPhase: butterfly.wingPhase + 0.2,
+        wingPhase: butterfly.wingPhase + 0.2 * (butterfly.isGliding ? 0.5 : 1),
+        isDashing: newIsDashing,
+        dashCooldown: newDashCooldown,
+        isGliding: newIsGliding,
+        glideEnergy: newGlideEnergy,
       },
     });
   },
@@ -417,13 +470,14 @@ export const useGameStore = create<GameState & {
   },
 
   updateFog: () => {
-    const { butterfly, fogGrid, fogCellSize } = get();
+    const { butterfly, fogGrid, fogCellSize, baseVisibility, abilityLevel } = get();
     const newGrid = fogGrid.map((row) => row.map((cell) => ({ ...cell })));
     let newExplored = 0;
 
     const playerCol = Math.floor(butterfly.x / fogCellSize);
     const playerRow = Math.floor(butterfly.y / fogCellSize);
-    const radiusInCells = Math.ceil(VISIBILITY_RADIUS / fogCellSize);
+    const visibilityRadius = baseVisibility * abilityLevel.visibilityMultiplier;
+    const radiusInCells = Math.ceil(visibilityRadius / fogCellSize);
 
     for (let row = 0; row < newGrid.length; row++) {
       for (let col = 0; col < newGrid[row].length; col++) {
@@ -479,6 +533,163 @@ export const useGameStore = create<GameState & {
     set({ explorationProgress: progress });
   },
 
+  dash: () => {
+    const { butterfly, abilityLevel, abilities } = get();
+    const dashAbility = abilities.find(a => a.id === 'dash');
+    if (!dashAbility || !dashAbility.unlocked || butterfly.dashCooldown > 0) return;
+
+    const speed = Math.sqrt(butterfly.vx * butterfly.vx + butterfly.vy * butterfly.vy);
+    const dashPower = 12 * abilityLevel.dashPower;
+    
+    let dashVx = butterfly.vx;
+    let dashVy = butterfly.vy;
+    
+    if (speed > 0.1) {
+      dashVx = (butterfly.vx / speed) * dashPower;
+      dashVy = (butterfly.vy / speed) * dashPower;
+    } else {
+      const angle = butterfly.rotation;
+      dashVx = Math.cos(angle) * dashPower;
+      dashVy = Math.sin(angle) * dashPower;
+    }
+
+    get().spawnDashParticles();
+
+    set({
+      butterfly: {
+        ...butterfly,
+        vx: dashVx,
+        vy: dashVy,
+        isDashing: true,
+        dashCooldown: DASH_COOLDOWN,
+      },
+    });
+  },
+
+  setGliding: (isGliding) => {
+    const { butterfly, abilities } = get();
+    const glideAbility = abilities.find(a => a.id === 'glide');
+    if (!glideAbility || !glideAbility.unlocked) return;
+    if (isGliding && butterfly.glideEnergy <= 0) return;
+    
+    set({
+      butterfly: {
+        ...butterfly,
+        isGliding,
+      },
+    });
+  },
+
+  spawnDashParticles: () => {
+    const { butterfly, particles } = get();
+    const newParticles: Particle[] = [];
+    const angle = butterfly.rotation + Math.PI;
+    
+    for (let i = 0; i < 20; i++) {
+      const spread = (Math.random() - 0.5) * 0.8;
+      const speed = 2 + Math.random() * 4;
+      newParticles.push({
+        x: butterfly.x,
+        y: butterfly.y,
+        vx: Math.cos(angle + spread) * speed,
+        vy: Math.sin(angle + spread) * speed,
+        life: 1,
+        maxLife: 1,
+        color: '#FFD700',
+        size: 4 + Math.random() * 4,
+      });
+    }
+    set({ particles: [...particles, ...newParticles] });
+  },
+
+  updateAbilityLevels: () => {
+    const { collectedFragments, explorationProgress, abilities } = get();
+    const collectedCount = collectedFragments.length;
+
+    const speedLevel = getSpeedLevelByFragments(collectedCount);
+    const visibilityLevel = getVisibilityLevelByExploration(explorationProgress);
+    const dashLevel = getDashLevelByFragments(collectedCount);
+    const glideLevel = getGlideLevelByExploration(explorationProgress);
+
+    const newAbilityLevel = getAbilityLevelStats(speedLevel, visibilityLevel, dashLevel, glideLevel);
+    
+    const updatedAbilities = abilities.map(ability => {
+      let newLevel = ability.level;
+      if (ability.id === 'speed') newLevel = speedLevel;
+      if (ability.id === 'visibility') newLevel = visibilityLevel;
+      if (ability.id === 'dash') newLevel = dashLevel;
+      if (ability.id === 'glide') newLevel = glideLevel;
+      
+      return { ...ability, level: newLevel };
+    });
+
+    set({ 
+      abilityLevel: newAbilityLevel,
+      abilities: updatedAbilities,
+    });
+  },
+
+  checkAbilityUnlocks: () => {
+    const { abilities, collectedFragments, explorationProgress } = get();
+    const collectedCount = collectedFragments.length;
+    
+    let hasNewUnlock = false;
+    let newUnlockAbility: ButterflyAbility | null = null;
+
+    const updatedAbilities = abilities.map(ability => {
+      if (!ability.unlocked) {
+        const shouldUnlock = checkAbilityUnlock(ability, collectedCount, explorationProgress);
+        if (shouldUnlock) {
+          hasNewUnlock = true;
+          newUnlockAbility = { ...ability, unlocked: true };
+          return { ...ability, unlocked: true };
+        }
+      }
+      return ability;
+    });
+
+    if (hasNewUnlock && newUnlockAbility) {
+      set({ 
+        abilities: updatedAbilities,
+        showAbilityUnlock: true,
+        unlockAbility: newUnlockAbility,
+      });
+      get().updateAbilityLevels();
+    }
+  },
+
+  checkHiddenAreaDiscovery: () => {
+    const { butterfly, hiddenAreas, abilities, abilityLevel } = get();
+    
+    let hasChanges = false;
+    const updatedAreas = hiddenAreas.map(area => {
+      if (area.discovered) return area;
+
+      const ability = abilities.find(a => a.id === area.requiredAbility);
+      if (!ability || !ability.unlocked) return area;
+
+      const centerX = area.x + area.width / 2;
+      const centerY = area.y + area.height / 2;
+      const dx = butterfly.x - centerX;
+      const dy = butterfly.y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      const detectRadius = Math.max(area.width, area.height) / 2 + 50;
+      
+      if (dist < detectRadius) {
+        hasChanges = true;
+        return { ...area, discovered: true };
+      }
+      return area;
+    });
+
+    if (hasChanges) {
+      set({ hiddenAreas: updatedAreas });
+    }
+  },
+
+  closeAbilityUnlock: () => set({ showAbilityUnlock: false, unlockAbility: null }),
+
   resetGame: () => {
     const newFog = createFogGrid();
     set({
@@ -501,6 +712,11 @@ export const useGameStore = create<GameState & {
       exploredCells: 0,
       totalCells: newFog.total,
       explorationProgress: 0,
+      abilities: [...INITIAL_ABILITIES],
+      abilityLevel: getAbilityLevelStats(1, 1, 0, 0),
+      hiddenAreas: [...INITIAL_HIDDEN_AREAS],
+      showAbilityUnlock: false,
+      unlockAbility: null,
     });
   },
 }));

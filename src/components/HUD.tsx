@@ -1,9 +1,16 @@
 import { useGameStore } from '../store/gameStore';
-import { BookOpen, Sparkles, Flower2 } from 'lucide-react';
+import { BookOpen, Sparkles, Flower2, Zap, Wind } from 'lucide-react';
 import { FLOWER_DATA } from '../data/flowers';
 
 export const HUD = () => {
-  const { fragments, collectedFragments, discoveredFlowers, openStoryBook } = useGameStore();
+  const { 
+    fragments, 
+    collectedFragments, 
+    discoveredFlowers, 
+    openStoryBook,
+    abilities,
+    butterfly,
+  } = useGameStore();
   const total = fragments.length;
   const collected = collectedFragments.length;
   const progress = (collected / total) * 100;
@@ -11,6 +18,11 @@ export const HUD = () => {
   const totalFlowers = FLOWER_DATA.length;
   const discovered = discoveredFlowers.length;
   const flowerProgress = (discovered / totalFlowers) * 100;
+
+  const speedAbility = abilities.find(a => a.id === 'speed');
+  const visibilityAbility = abilities.find(a => a.id === 'visibility');
+  const dashAbility = abilities.find(a => a.id === 'dash');
+  const glideAbility = abilities.find(a => a.id === 'glide');
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
@@ -31,6 +43,127 @@ export const HUD = () => {
               style={{ width: `${progress}%` }}
             />
           </div>
+        </div>
+
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🦋</span>
+            <span className="text-purple-700 font-medium tracking-wider">能力成长</span>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">💨</span>
+              <span className="text-sm text-purple-600 flex-1">飞行速度</span>
+              <div className="flex gap-0.5">
+                {Array.from({ length: speedAbility?.maxLevel || 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-4 rounded-sm ${
+                      i < (speedAbility?.level || 0)
+                        ? 'bg-gradient-to-t from-purple-500 to-pink-400'
+                        : 'bg-white/40'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-lg">👁️</span>
+              <span className="text-sm text-purple-600 flex-1">探索视野</span>
+              <div className="flex gap-0.5">
+                {Array.from({ length: visibilityAbility?.maxLevel || 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-4 rounded-sm ${
+                      i < (visibilityAbility?.level || 0)
+                        ? 'bg-gradient-to-t from-emerald-500 to-teal-400'
+                        : 'bg-white/40'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Zap className={`w-5 h-5 ${dashAbility?.unlocked ? 'text-yellow-500' : 'text-gray-400'}`} />
+              <span className={`text-sm flex-1 ${dashAbility?.unlocked ? 'text-purple-600' : 'text-gray-400'}`}>
+                极速冲刺
+              </span>
+              {dashAbility?.unlocked ? (
+                <div className="flex gap-0.5">
+                  {Array.from({ length: dashAbility.maxLevel }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-2 h-4 rounded-sm ${
+                        i < dashAbility.level
+                          ? 'bg-gradient-to-t from-yellow-500 to-orange-400'
+                          : 'bg-white/40'
+                      }`}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-gray-400">🔒</span>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Wind className={`w-5 h-5 ${glideAbility?.unlocked ? 'text-sky-500' : 'text-gray-400'}`} />
+              <span className={`text-sm flex-1 ${glideAbility?.unlocked ? 'text-purple-600' : 'text-gray-400'}`}>
+                滑翔能力
+              </span>
+              {glideAbility?.unlocked ? (
+                <div className="flex gap-0.5">
+                  {Array.from({ length: glideAbility.maxLevel }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-2 h-4 rounded-sm ${
+                        i < glideAbility.level
+                          ? 'bg-gradient-to-t from-sky-500 to-cyan-400'
+                          : 'bg-white/40'
+                      }`}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-gray-400">🔒</span>
+              )}
+            </div>
+          </div>
+          
+          {dashAbility?.unlocked && (
+            <div className="mt-3 pt-3 border-t border-white/40">
+              <div className="flex items-center gap-2 text-xs text-purple-500">
+                <span>空格键</span>
+                <span>冲刺</span>
+                <div className="flex-1 h-1.5 bg-white/30 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-yellow-400 rounded-full transition-all duration-100"
+                    style={{ width: `${Math.max(0, 100 - (butterfly.dashCooldown / 60) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {glideAbility?.unlocked && (
+            <div className="mt-2">
+              <div className="flex items-center gap-2 text-xs text-purple-500">
+                <span>Shift</span>
+                <span>滑翔</span>
+                <div className="flex-1 h-1.5 bg-white/30 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-100 ${
+                      butterfly.isGliding ? 'bg-sky-400' : 'bg-sky-300'
+                    }`}
+                    style={{ width: `${butterfly.glideEnergy}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
@@ -68,7 +201,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-            WASD 或 方向键 控制飞舞 · 探索迷雾地图 · 收集记忆碎片 · 发现花朵记忆
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
           </p>
         </div>
       </div>

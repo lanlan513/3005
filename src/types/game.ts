@@ -5,6 +5,41 @@ export interface Butterfly {
   vy: number;
   rotation: number;
   wingPhase: number;
+  isDashing: boolean;
+  dashCooldown: number;
+  isGliding: boolean;
+  glideEnergy: number;
+}
+
+export interface ButterflyAbility {
+  id: string;
+  name: string;
+  description: string;
+  unlocked: boolean;
+  unlockCondition: string;
+  icon: string;
+  level: number;
+  maxLevel: number;
+}
+
+export interface HiddenArea {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  requiredAbility: string;
+  discovered: boolean;
+  color: string;
+  description: string;
+}
+
+export interface AbilityLevel {
+  speedMultiplier: number;
+  visibilityMultiplier: number;
+  dashPower: number;
+  glideEfficiency: number;
 }
 
 export interface Fragment {
@@ -118,4 +153,11 @@ export interface GameState {
   exploredCells: number;
   totalCells: number;
   explorationProgress: number;
+  abilities: ButterflyAbility[];
+  abilityLevel: AbilityLevel;
+  hiddenAreas: HiddenArea[];
+  showAbilityUnlock: boolean;
+  unlockAbility: ButterflyAbility | null;
+  baseSpeed: number;
+  baseVisibility: number;
 }

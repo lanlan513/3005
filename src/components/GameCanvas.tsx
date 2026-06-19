@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree } from '../types/game';
+import { Flower, Tree, HiddenArea } from '../types/game';
 
 const DECORATIVE_FLOWER_COUNT = 80;
 const TREE_COUNT = 18;
@@ -71,6 +71,9 @@ export const GameCanvas = () => {
     mapHeight,
     fogGrid,
     fogCellSize,
+    hiddenAreas,
+    abilities,
+    abilityLevel,
     setButterflyVelocity,
     updateButterfly,
     updateFragments,
@@ -87,14 +90,34 @@ export const GameCanvas = () => {
     discoverFlower,
     checkFlowerUnlocks,
     spawnCollectParticles,
+    dash,
+    setGliding,
+    updateAbilityLevels,
+    checkAbilityUnlocks,
+    checkHiddenAreaDiscovery,
   } = useGameStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      keysRef.current.add(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      keysRef.current.add(key);
+      
+      if (key === ' ' && !e.repeat) {
+        e.preventDefault();
+        dash();
+      }
+      
+      if (key === 'shift') {
+        setGliding(true);
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      keysRef.current.delete(key);
+      
+      if (key === 'shift') {
+        setGliding(false);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -102,7 +125,7 @@ export const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [dash, setGliding]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -228,6 +251,9 @@ export const GameCanvas = () => {
     updateFlowers();
     checkFlowerDiscovery();
     checkFlowerUnlocks();
+    updateAbilityLevels();
+    checkAbilityUnlocks();
+    checkHiddenAreaDiscovery();
     updateParticles();
     updatePetals();
     updateFireflies();
@@ -268,6 +294,7 @@ export const GameCanvas = () => {
 
     drawGround(ctx, offsetX, offsetY);
     drawPath(ctx, offsetX, offsetY);
+    drawHiddenAreas(ctx, offsetX, offsetY);
     drawTrees(ctx, offsetX, offsetY);
     drawFlowers(ctx, offsetX, offsetY);
     drawFireflies(ctx, offsetX, offsetY);
@@ -318,6 +345,80 @@ export const GameCanvas = () => {
     ctx.quadraticCurveTo(1800, 1100, 2400, 900);
     ctx.stroke();
     ctx.restore();
+  };
+
+  const drawHiddenAreas = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const area of hiddenAreas) {
+      const x = area.x + ox;
+      const y = area.y + oy;
+      
+      if (x + area.width < -100 || x > viewportWidth + 100 || 
+          y + area.height < -100 || y > viewportHeight + 100) continue;
+
+      const ability = abilities.find(a => a.id === area.requiredAbility);
+      const canDiscover = ability && ability.unlocked;
+      
+      ctx.save();
+      
+      if (area.discovered) {
+        const gradient = ctx.createRadialGradient(
+          x + area.width / 2, y + area.height / 2, 0,
+          x + area.width / 2, y + area.height / 2, Math.max(area.width, area.height) / 2
+        );
+        gradient.addColorStop(0, area.color + '44');
+        gradient.addColorStop(0.5, area.color + '22');
+        gradient.addColorStop(1, area.color + '00');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x - 30, y - 30, area.width + 60, area.height + 60);
+
+        ctx.strokeStyle = area.color + 'AA';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.strokeRect(x, y, area.width, area.height);
+        ctx.setLineDash([]);
+
+        const pulseScale = 1 + Math.sin(timeRef.current * 2) * 0.05;
+        ctx.save();
+        ctx.translate(x + area.width / 2, y + area.height / 2);
+        ctx.scale(pulseScale, pulseScale);
+        ctx.translate(-(x + area.width / 2), -(y + area.height / 2));
+        
+        const borderGradient = ctx.createLinearGradient(x, y, x + area.width, y + area.height);
+        borderGradient.addColorStop(0, area.color);
+        borderGradient.addColorStop(0.5, '#FFFFFF');
+        borderGradient.addColorStop(1, area.color);
+        ctx.strokeStyle = borderGradient;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 5, y + 5, area.width - 10, area.height - 10);
+        ctx.restore();
+
+        ctx.fillStyle = area.color;
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(area.name, x + area.width / 2, y + area.height / 2);
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(area.description, x + area.width / 2, y + area.height / 2 + 25);
+      } else if (canDiscover) {
+        const hintAlpha = 0.15 + Math.sin(timeRef.current * 1.5) * 0.1;
+        ctx.fillStyle = area.color + Math.floor(hintAlpha * 255).toString(16).padStart(2, '0');
+        ctx.fillRect(x, y, area.width, area.height);
+        
+        ctx.strokeStyle = area.color + '44';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x, y, area.width, area.height);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = area.color + 'AA';
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', x + area.width / 2, y + area.height / 2 + 8);
+      }
+      
+      ctx.restore();
+    }
   };
 
   const drawTrees = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
@@ -494,23 +595,43 @@ export const GameCanvas = () => {
     for (const f of fireflies) {
       const x = f.x + ox;
       const y = f.y + oy;
-      if (x < -20 || x > viewportWidth + 20 || y < -20 || y > viewportHeight + 20) continue;
+      if (x < -30 || x > viewportWidth + 30 || y < -30 || y > viewportHeight + 30) continue;
 
       const glow = f.glow;
       ctx.save();
-      ctx.globalAlpha = glow * 0.8;
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, 15);
-      gradient.addColorStop(0, '#FFFACD');
-      gradient.addColorStop(0.4, '#FFE066');
-      gradient.addColorStop(1, 'rgba(255, 224, 102, 0)');
-      ctx.fillStyle = gradient;
+      
+      ctx.globalAlpha = glow * 0.6;
+      const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, 25);
+      outerGlow.addColorStop(0, '#FFFACD');
+      outerGlow.addColorStop(0.2, '#FFE066');
+      outerGlow.addColorStop(0.5, 'rgba(255, 224, 102, 0.3)');
+      outerGlow.addColorStop(1, 'rgba(255, 224, 102, 0)');
+      ctx.fillStyle = outerGlow;
       ctx.beginPath();
-      ctx.arc(x, y, 15, 0, Math.PI * 2);
+      ctx.arc(x, y, 25, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#FFF8DC';
+      
+      ctx.globalAlpha = glow * 0.9;
+      const innerGlow = ctx.createRadialGradient(x, y, 0, x, y, 12);
+      innerGlow.addColorStop(0, '#FFFFFF');
+      innerGlow.addColorStop(0.3, '#FFFACD');
+      innerGlow.addColorStop(1, 'rgba(255, 250, 205, 0)');
+      ctx.fillStyle = innerGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = '#FFFFF0';
       ctx.beginPath();
       ctx.arc(x, y, 2 + glow * 2, 0, Math.PI * 2);
       ctx.fill();
+      
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(x - 1, y - 1, 1 + glow, 0, Math.PI * 2);
+      ctx.fill();
+      
       ctx.restore();
     }
   };
@@ -523,18 +644,36 @@ export const GameCanvas = () => {
       if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) continue;
 
       const glowIntensity = (Math.sin(fragment.glowPhase) + 1) / 2;
+      const pulseScale = 1 + Math.sin(fragment.glowPhase * 2) * 0.1;
+      
       ctx.save();
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, 50 + glowIntensity * 20);
-      gradient.addColorStop(0, fragment.color + 'CC');
-      gradient.addColorStop(0.3, fragment.color + '66');
-      gradient.addColorStop(1, fragment.color + '00');
-      ctx.fillStyle = gradient;
+      
+      const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, 60 + glowIntensity * 30);
+      outerGlow.addColorStop(0, fragment.color + '66');
+      outerGlow.addColorStop(0.2, fragment.color + '44');
+      outerGlow.addColorStop(0.5, fragment.color + '22');
+      outerGlow.addColorStop(1, fragment.color + '00');
+      ctx.fillStyle = outerGlow;
       ctx.beginPath();
-      ctx.arc(x, y, 50 + glowIntensity * 20, 0, Math.PI * 2);
+      ctx.arc(x, y, 60 + glowIntensity * 30, 0, Math.PI * 2);
+      ctx.fill();
+      
+      const innerGlow = ctx.createRadialGradient(x, y, 0, x, y, 35 + glowIntensity * 15);
+      innerGlow.addColorStop(0, fragment.color + 'CC');
+      innerGlow.addColorStop(0.4, fragment.color + '66');
+      innerGlow.addColorStop(1, fragment.color + '00');
+      ctx.fillStyle = innerGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, 35 + glowIntensity * 15, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.translate(x, y);
       ctx.rotate(fragment.glowPhase * 0.3);
+      ctx.scale(pulseScale, pulseScale);
+      
+      ctx.shadowColor = fragment.color;
+      ctx.shadowBlur = 15;
+      
       ctx.fillStyle = fragment.color;
       ctx.beginPath();
       ctx.moveTo(0, -22);
@@ -544,7 +683,9 @@ export const GameCanvas = () => {
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.shadowBlur = 0;
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
       ctx.beginPath();
       ctx.moveTo(0, -18);
       ctx.lineTo(8, -6);
@@ -552,6 +693,33 @@ export const GameCanvas = () => {
       ctx.lineTo(-8, -6);
       ctx.closePath();
       ctx.fill();
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(0, -14);
+      ctx.lineTo(5, -4);
+      ctx.lineTo(0, 2);
+      ctx.lineTo(-5, -4);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.restore();
+      
+      ctx.save();
+      const sparkCount = 3;
+      for (let i = 0; i < sparkCount; i++) {
+        const sparkAngle = fragment.glowPhase + (Math.PI * 2 * i) / sparkCount;
+        const sparkDist = 25 + Math.sin(fragment.glowPhase * 3 + i) * 10;
+        const sparkX = x + Math.cos(sparkAngle) * sparkDist;
+        const sparkY = y + Math.sin(sparkAngle) * sparkDist;
+        const sparkSize = 2 + Math.sin(fragment.glowPhase * 2 + i) * 1;
+        
+        ctx.globalAlpha = 0.6 + Math.sin(fragment.glowPhase * 4 + i) * 0.3;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(sparkX, sparkY, sparkSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
   };
@@ -565,15 +733,28 @@ export const GameCanvas = () => {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(petal.rotation);
+      
+      ctx.shadowColor = petal.color;
+      ctx.shadowBlur = 8;
+      
       ctx.fillStyle = petal.color;
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
       ctx.ellipse(0, 0, petal.size, petal.size * 0.5, 0, 0, Math.PI * 2);
       ctx.fill();
+      
+      ctx.shadowBlur = 0;
+      
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.beginPath();
       ctx.ellipse(-petal.size * 0.2, -petal.size * 0.1, petal.size * 0.4, petal.size * 0.2, 0, 0, Math.PI * 2);
       ctx.fill();
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.beginPath();
+      ctx.ellipse(petal.size * 0.1, petal.size * 0.1, petal.size * 0.3, petal.size * 0.15, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      
       ctx.restore();
     }
   };
@@ -581,15 +762,65 @@ export const GameCanvas = () => {
   const drawButterfly = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
     const x = butterfly.x + ox;
     const y = butterfly.y + oy;
+    const speed = Math.sqrt(butterfly.vx * butterfly.vx + butterfly.vy * butterfly.vy);
+
+    if (butterfly.isDashing) {
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      const dashGradient = ctx.createRadialGradient(x, y, 0, x, y, 80);
+      dashGradient.addColorStop(0, '#FFD700');
+      dashGradient.addColorStop(0.3, '#FFA500');
+      dashGradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
+      ctx.fillStyle = dashGradient;
+      ctx.beginPath();
+      ctx.arc(x, y, 80, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      const dashAngle = butterfly.rotation;
+      for (let i = 0; i < 5; i++) {
+        const offset = (i - 2) * 8;
+        const startX = x - Math.cos(dashAngle) * (30 + Math.abs(offset) * 2);
+        const startY = y - Math.sin(dashAngle) * (30 + Math.abs(offset) * 2);
+        const endX = x - Math.cos(dashAngle) * (60 + Math.abs(offset) * 3);
+        const endY = y - Math.sin(dashAngle) * (60 + Math.abs(offset) * 3);
+        ctx.globalAlpha = 0.6 - Math.abs(offset) * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(startX + Math.sin(dashAngle) * offset, startY - Math.cos(dashAngle) * offset);
+        ctx.lineTo(endX + Math.sin(dashAngle) * offset, endY - Math.cos(dashAngle) * offset);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if (butterfly.isGliding) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      const glideGradient = ctx.createRadialGradient(x, y, 0, x, y, 60);
+      glideGradient.addColorStop(0, '#87CEEB');
+      glideGradient.addColorStop(1, 'rgba(135, 206, 235, 0)');
+      ctx.fillStyle = glideGradient;
+      ctx.beginPath();
+      ctx.arc(x, y, 60, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     ctx.save();
-    ctx.globalAlpha = 0.2;
-    const trailGradient = ctx.createRadialGradient(x, y, 0, x, y, 40);
-    trailGradient.addColorStop(0, '#9B7EDC');
+    const trailSize = butterfly.isDashing ? 60 : 40;
+    const trailAlpha = butterfly.isDashing ? 0.4 : 0.2;
+    ctx.globalAlpha = trailAlpha;
+    const trailGradient = ctx.createRadialGradient(x, y, 0, x, y, trailSize);
+    const trailColor = butterfly.isDashing ? '#FFD700' : '#9B7EDC';
+    trailGradient.addColorStop(0, trailColor);
     trailGradient.addColorStop(1, 'rgba(155, 126, 220, 0)');
     ctx.fillStyle = trailGradient;
     ctx.beginPath();
-    ctx.arc(x, y, 40, 0, Math.PI * 2);
+    ctx.arc(x, y, trailSize, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -598,18 +829,30 @@ export const GameCanvas = () => {
     ctx.rotate(butterfly.rotation + Math.PI / 2);
 
     const wingFlap = Math.sin(butterfly.wingPhase) * 0.6;
-    const speed = Math.sqrt(butterfly.vx * butterfly.vx + butterfly.vy * butterfly.vy);
-    const flapAmplitude = 0.5 + Math.min(speed * 0.1, 0.5);
+    let flapAmplitude = 0.5 + Math.min(speed * 0.1, 0.5);
+    
+    if (butterfly.isGliding) {
+      flapAmplitude *= 0.3;
+    }
+    if (butterfly.isDashing) {
+      flapAmplitude *= 1.5;
+    }
 
-    ctx.fillStyle = '#4A3728';
+    const bodyColor = butterfly.isDashing ? '#6B4423' : '#4A3728';
+    const wingColor = butterfly.isDashing ? '#FFD700' : '#9B7EDC';
+    const wingHighlight = butterfly.isDashing ? '#FFF8DC' : '#B39DDB';
+    const spotColor = butterfly.isDashing ? '#FF6B35' : '#FFD93D';
+    const hindWingColor = butterfly.isGliding ? '#87CEEB' : '#FFB6C8';
+
+    ctx.fillStyle = bodyColor;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 4, 18, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, butterfly.isDashing ? 5 : 4, 18, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(0, -18, 5, 0, Math.PI * 2);
+    ctx.arc(0, -18, butterfly.isDashing ? 6 : 5, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#4A3728';
+    ctx.strokeStyle = bodyColor;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(-3, -20);
@@ -618,47 +861,78 @@ export const GameCanvas = () => {
     ctx.quadraticCurveTo(8, -28, 5, -32);
     ctx.stroke();
 
+    if (butterfly.isDashing) {
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(-6, -18, 2, 0, Math.PI * 2);
+      ctx.arc(6, -18, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const foreWingScale = butterfly.isGliding ? 1.3 : 1;
+
     ctx.save();
     ctx.rotate(-wingFlap * flapAmplitude);
-    ctx.fillStyle = '#9B7EDC';
+    ctx.scale(foreWingScale, foreWingScale);
+    ctx.fillStyle = wingColor;
     ctx.beginPath();
     ctx.ellipse(-18, -8, 20, 28, -0.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#B39DDB';
+    ctx.fillStyle = wingHighlight;
     ctx.beginPath();
     ctx.ellipse(-14, -12, 12, 16, -0.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#FFD93D';
+    ctx.fillStyle = spotColor;
     ctx.beginPath();
     ctx.arc(-18, -14, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
     ctx.arc(-22, -4, 3, 0, Math.PI * 2);
     ctx.fill();
+    
+    if (butterfly.isGliding) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(-18, -8, 22, 30, -0.3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
 
     ctx.save();
     ctx.rotate(wingFlap * flapAmplitude);
-    ctx.fillStyle = '#9B7EDC';
+    ctx.scale(foreWingScale, foreWingScale);
+    ctx.fillStyle = wingColor;
     ctx.beginPath();
     ctx.ellipse(18, -8, 20, 28, 0.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#B39DDB';
+    ctx.fillStyle = wingHighlight;
     ctx.beginPath();
     ctx.ellipse(14, -12, 12, 16, 0.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#FFD93D';
+    ctx.fillStyle = spotColor;
     ctx.beginPath();
     ctx.arc(18, -14, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
     ctx.arc(22, -4, 3, 0, Math.PI * 2);
     ctx.fill();
+    
+    if (butterfly.isGliding) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(18, -8, 22, 30, 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
+
+    const hindWingScale = butterfly.isGliding ? 1.2 : 1;
 
     ctx.save();
     ctx.rotate(-wingFlap * flapAmplitude * 0.7);
-    ctx.fillStyle = '#FFB6C8';
+    ctx.scale(hindWingScale, hindWingScale);
+    ctx.fillStyle = hindWingColor;
     ctx.beginPath();
     ctx.ellipse(-10, 12, 10, 14, -0.2, 0, Math.PI * 2);
     ctx.fill();
@@ -666,7 +940,8 @@ export const GameCanvas = () => {
 
     ctx.save();
     ctx.rotate(wingFlap * flapAmplitude * 0.7);
-    ctx.fillStyle = '#FFB6C8';
+    ctx.scale(hindWingScale, hindWingScale);
+    ctx.fillStyle = hindWingColor;
     ctx.beginPath();
     ctx.ellipse(10, 12, 10, 14, 0.2, 0, Math.PI * 2);
     ctx.fill();
@@ -679,20 +954,33 @@ export const GameCanvas = () => {
     for (const p of particles) {
       const x = p.x + ox;
       const y = p.y + oy;
+      const lifeRatio = p.life / p.maxLife;
+      const size = p.size * lifeRatio;
+      
       ctx.save();
-      ctx.globalAlpha = p.life / p.maxLife;
+      
+      ctx.globalAlpha = lifeRatio * 0.6;
+      const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+      outerGlow.addColorStop(0, p.color + 'AA');
+      outerGlow.addColorStop(0.3, p.color + '44');
+      outerGlow.addColorStop(1, p.color + '00');
+      ctx.fillStyle = outerGlow;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.globalAlpha = lifeRatio;
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(x, y, p.size * (p.life / p.maxLife), 0, Math.PI * 2);
+      ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = (p.life / p.maxLife) * 0.5;
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, p.size * 2);
-      glow.addColorStop(0, p.color);
-      glow.addColorStop(1, p.color + '00');
-      ctx.fillStyle = glow;
+      
+      ctx.globalAlpha = lifeRatio * 0.8;
+      ctx.fillStyle = '#FFFFFF';
       ctx.beginPath();
-      ctx.arc(x, y, p.size * 2, 0, Math.PI * 2);
+      ctx.arc(x - size * 0.3, y - size * 0.3, size * 0.4, 0, Math.PI * 2);
       ctx.fill();
+      
       ctx.restore();
     }
   };
