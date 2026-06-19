@@ -1,22 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { Flower, Tree } from '../types/game';
 
-const FLOWER_COUNT = 120;
+const DECORATIVE_FLOWER_COUNT = 80;
 const TREE_COUNT = 18;
 
-const generateFlowers = (): Flower[] => {
+const generateDecorativeFlowers = (): Flower[] => {
   const flowers: Flower[] = [];
   const colors = ['#FFB6C8', '#FFD93D', '#FF9ECD', '#A8E6CF', '#FFE66D', '#FF6B9D', '#C9B1FF'];
-  for (let i = 0; i < FLOWER_COUNT; i++) {
+  for (let i = 0; i < DECORATIVE_FLOWER_COUNT; i++) {
     flowers.push({
+      id: `decorative-${i}`,
       x: Math.random() * 2400,
       y: Math.random() * 1800,
-      size: 8 + Math.random() * 16,
+      size: 6 + Math.random() * 10,
       color: colors[Math.floor(Math.random() * colors.length)],
       petalCount: 5 + Math.floor(Math.random() * 3),
       swayPhase: Math.random() * Math.PI * 2,
+      type: 'decorative',
+      name: '',
+      unlocked: true,
+      discovered: true,
+      unlockCondition: '',
+      memory: '',
+      knowledge: '',
+      flowerLanguage: '',
+      bloomPhase: 1,
+      pulsePhase: 0,
     });
   }
   return flowers;
@@ -39,9 +50,10 @@ const generateTrees = (): Tree[] => {
 export const GameCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Set<string>>(new Set());
-  const flowersRef = useRef<Flower[]>(generateFlowers());
+  const decorativeFlowersRef = useRef<Flower[]>(generateDecorativeFlowers());
   const treesRef = useRef<Tree[]>(generateTrees());
   const timeRef = useRef(0);
+  const hoveredFlowerIdRef = useRef<string | null>(null);
 
   const {
     butterfly,
@@ -49,6 +61,7 @@ export const GameCanvas = () => {
     particles,
     petals,
     fireflies,
+    flowers,
     cameraX,
     cameraY,
     isPlaying,
@@ -65,10 +78,15 @@ export const GameCanvas = () => {
     updateParticles,
     updatePetals,
     updateFireflies,
+    updateFlowers,
     updateCamera,
     setViewport,
     updateFog,
     spawnRandomFragments,
+    openFlowerCard,
+    discoverFlower,
+    checkFlowerUnlocks,
+    spawnCollectParticles,
   } = useGameStore();
 
   useEffect(() => {
@@ -99,6 +117,80 @@ export const GameCanvas = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [setViewport]);
+
+  const screenToWorld = useCallback((screenX: number, screenY: number) => {
+    const offsetX = viewportWidth / 2 - cameraX;
+    const offsetY = viewportHeight / 2 - cameraY;
+    return {
+      x: screenX - offsetX,
+      y: screenY - offsetY,
+    };
+  }, [cameraX, cameraY, viewportWidth, viewportHeight]);
+
+  const getFlowerAtPosition = useCallback((worldX: number, worldY: number): Flower | null => {
+    for (const flower of flowers) {
+      if (flower.type === 'decorative') continue;
+      const dx = worldX - flower.x;
+      const dy = worldY - flower.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < flower.size * 1.5) {
+        return flower;
+      }
+    }
+    return null;
+  }, [flowers]);
+
+  const handleCanvasClick = useCallback((e: MouseEvent) => {
+    if (!isPlaying) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldPos = screenToWorld(screenX, screenY);
+    const flower = getFlowerAtPosition(worldPos.x, worldPos.y);
+
+    if (flower && flower.unlocked) {
+      if (!flower.discovered) {
+        discoverFlower(flower.id);
+        spawnCollectParticles(flower.x, flower.y, flower.color);
+      }
+      openFlowerCard(flower.id);
+    }
+  }, [isPlaying, screenToWorld, getFlowerAtPosition, openFlowerCard, discoverFlower, spawnCollectParticles]);
+
+  const handleCanvasMouseMove = useCallback((e: MouseEvent) => {
+    if (!isPlaying) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldPos = screenToWorld(screenX, screenY);
+    const flower = getFlowerAtPosition(worldPos.x, worldPos.y);
+
+    if (flower && flower.unlocked) {
+      canvas.style.cursor = 'pointer';
+      hoveredFlowerIdRef.current = flower.id;
+    } else {
+      canvas.style.cursor = 'default';
+      hoveredFlowerIdRef.current = null;
+    }
+  }, [isPlaying, screenToWorld, getFlowerAtPosition]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('mousemove', handleCanvasMouseMove);
+    return () => {
+      canvas.removeEventListener('click', handleCanvasClick);
+      canvas.removeEventListener('mousemove', handleCanvasMouseMove);
+    };
+  }, [handleCanvasClick, handleCanvasMouseMove]);
 
   const handleInput = () => {
     let dx = 0;
@@ -133,6 +225,9 @@ export const GameCanvas = () => {
     updateButterfly();
     updateFragments();
     checkFragmentCollision();
+    updateFlowers();
+    checkFlowerDiscovery();
+    checkFlowerUnlocks();
     updateParticles();
     updatePetals();
     updateFireflies();
@@ -142,6 +237,22 @@ export const GameCanvas = () => {
   };
 
   useGameLoop(gameLoop, isPlaying);
+
+  const checkFlowerDiscovery = () => {
+    for (const flower of flowers) {
+      if (flower.type === 'decorative') continue;
+      if (!flower.unlocked || flower.discovered) continue;
+      
+      const dx = butterfly.x - flower.x;
+      const dy = butterfly.y - flower.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < flower.size * 2 + 20) {
+        discoverFlower(flower.id);
+        spawnCollectParticles(flower.x, flower.y, flower.color);
+      }
+    }
+  };
 
   const render = () => {
     const canvas = canvasRef.current;
@@ -263,16 +374,95 @@ export const GameCanvas = () => {
     }
   };
 
+  const drawFlower = (ctx: CanvasRenderingContext2D, flower: Flower, ox: number, oy: number, isInteractive: boolean = false) => {
+    const x = flower.x + ox;
+    const y = flower.y + oy;
+    if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) return;
+
+    const sway = Math.sin(timeRef.current * 2 + flower.swayPhase) * 2;
+    const pulse = isInteractive ? (Math.sin(flower.pulsePhase) + 1) * 0.1 + 1 : 1;
+    const isHovered = hoveredFlowerIdRef.current === flower.id;
+    const scale = isHovered ? 1.2 : 1;
+    const bloomScale = flower.bloomPhase || 1;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale * bloomScale, scale * bloomScale);
+    ctx.translate(-x, -y);
+
+    if (isInteractive && flower.unlocked) {
+      const glowIntensity = (Math.sin(flower.pulsePhase * 0.5) + 1) / 2;
+      const gradient = ctx.createRadialGradient(x + sway, y, 0, x + sway, y, flower.size * 2.5);
+      gradient.addColorStop(0, flower.color + '66');
+      gradient.addColorStop(0.5, flower.color + '22');
+      gradient.addColorStop(1, flower.color + '00');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x + sway, y, flower.size * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = flower.unlocked ? '#4CAF50' : '#6B7280';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y + flower.size * pulse);
+    ctx.quadraticCurveTo(x + sway, y + flower.size * 0.5 * pulse, x + sway, y);
+    ctx.stroke();
+
+    if (flower.unlocked) {
+      ctx.fillStyle = flower.color;
+    } else {
+      ctx.fillStyle = '#9CA3AF';
+      ctx.globalAlpha = 0.5;
+    }
+    
+    for (let i = 0; i < flower.petalCount; i++) {
+      const angle = (Math.PI * 2 * i) / flower.petalCount;
+      const px = x + sway + Math.cos(angle) * flower.size * 0.4 * pulse;
+      const py = y + Math.sin(angle) * flower.size * 0.4 * pulse;
+      ctx.beginPath();
+      ctx.ellipse(px, py, flower.size * 0.3, flower.size * 0.2, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalAlpha = 1;
+    
+    if (flower.unlocked) {
+      ctx.fillStyle = '#FFD93D';
+    } else {
+      ctx.fillStyle = '#6B7280';
+    }
+    ctx.beginPath();
+    ctx.arc(x + sway, y, flower.size * 0.2 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (isInteractive && !flower.unlocked) {
+      ctx.fillStyle = '#4B5563';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔒', x + sway, y - flower.size - 15);
+    }
+
+    if (isInteractive && flower.discovered) {
+      ctx.fillStyle = '#FBBF24';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✨', x + sway, y - flower.size - 10);
+    }
+
+    ctx.restore();
+  };
+
   const drawFlowers = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
-    for (const flower of flowersRef.current) {
+    for (const flower of decorativeFlowersRef.current) {
+      const sway = Math.sin(timeRef.current * 2 + flower.swayPhase) * 1.5;
       const x = flower.x + ox;
       const y = flower.y + oy;
-      if (x < -50 || x > viewportWidth + 50 || y < -50 || y > viewportHeight + 50) continue;
-
-      const sway = Math.sin(timeRef.current * 2 + flower.swayPhase) * 2;
+      if (x < -30 || x > viewportWidth + 30 || y < -30 || y > viewportHeight + 30) continue;
 
       ctx.strokeStyle = '#4CAF50';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(x, y + flower.size);
       ctx.quadraticCurveTo(x + sway, y + flower.size * 0.5, x + sway, y);
@@ -284,13 +474,18 @@ export const GameCanvas = () => {
         const px = x + sway + Math.cos(angle) * flower.size * 0.4;
         const py = y + Math.sin(angle) * flower.size * 0.4;
         ctx.beginPath();
-        ctx.ellipse(px, py, flower.size * 0.3, flower.size * 0.2, angle, 0, Math.PI * 2);
+        ctx.ellipse(px, py, flower.size * 0.25, flower.size * 0.15, angle, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.fillStyle = '#FFD93D';
       ctx.beginPath();
-      ctx.arc(x + sway, y, flower.size * 0.2, 0, Math.PI * 2);
+      ctx.arc(x + sway, y, flower.size * 0.15, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    for (const flower of flowers) {
+      if (flower.type === 'decorative') continue;
+      drawFlower(ctx, flower, ox, oy, true);
     }
   };
 

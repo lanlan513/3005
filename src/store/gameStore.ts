@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
+import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
 
 const FOG_CELL_SIZE = 40;
 const VISIBILITY_RADIUS = 120;
@@ -47,6 +48,15 @@ const createInitialFireflies = (): Firefly[] => {
     });
   }
   return fireflies;
+};
+
+const createInitialFlowers = (): Flower[] => {
+  return FLOWER_DATA.map((flowerData, index) => ({
+    ...flowerData,
+    swayPhase: Math.random() * Math.PI * 2,
+    bloomPhase: 0,
+    pulsePhase: Math.random() * Math.PI * 2,
+  }));
 };
 
 const createFogGrid = (): { grid: FogCell[][]; total: number } => {
@@ -112,6 +122,7 @@ export const useGameStore = create<GameState & {
   updatePetals: () => void;
   updateFireflies: () => void;
   updateFragments: () => void;
+  updateFlowers: () => void;
   spawnCollectParticles: (x: number, y: number, color: string) => void;
   updateCamera: () => void;
   setViewport: (w: number, h: number) => void;
@@ -119,6 +130,10 @@ export const useGameStore = create<GameState & {
   closeStory: () => void;
   openStoryBook: () => void;
   closeStoryBook: () => void;
+  openFlowerCard: (flowerId: string) => void;
+  closeFlowerCard: () => void;
+  discoverFlower: (flowerId: string) => void;
+  checkFlowerUnlocks: () => void;
   resetGame: () => void;
   updateFog: () => void;
   spawnRandomFragments: () => void;
@@ -135,6 +150,10 @@ export const useGameStore = create<GameState & {
   particles: [],
   petals: createInitialPetals(),
   fireflies: createInitialFireflies(),
+  flowers: createInitialFlowers(),
+  discoveredFlowers: [],
+  showFlowerCard: false,
+  currentFlower: null,
   mapWidth: MAP_WIDTH,
   mapHeight: MAP_HEIGHT,
   cameraX: 200,
@@ -199,6 +218,18 @@ export const useGameStore = create<GameState & {
         ...f,
         glowPhase: f.glowPhase + 0.05,
         floatPhase: f.floatPhase + 0.03,
+      })),
+    });
+  },
+
+  updateFlowers: () => {
+    const { flowers } = get();
+    set({
+      flowers: flowers.map((f) => ({
+        ...f,
+        swayPhase: f.swayPhase + 0.02,
+        pulsePhase: f.pulsePhase + 0.03,
+        bloomPhase: f.discovered ? Math.min(1, f.bloomPhase + 0.02) : f.bloomPhase,
       })),
     });
   },
@@ -342,6 +373,49 @@ export const useGameStore = create<GameState & {
 
   closeStoryBook: () => set({ showStoryBook: false }),
 
+  openFlowerCard: (flowerId: string) => {
+    const { flowers } = get();
+    const flower = flowers.find((f) => f.id === flowerId);
+    if (flower) {
+      set({ showFlowerCard: true, currentFlower: flower });
+    }
+  },
+
+  closeFlowerCard: () => set({ showFlowerCard: false, currentFlower: null }),
+
+  discoverFlower: (flowerId: string) => {
+    const { flowers, discoveredFlowers } = get();
+    if (!discoveredFlowers.includes(flowerId)) {
+      set({
+        flowers: flowers.map((f) =>
+          f.id === flowerId ? { ...f, discovered: true, bloomPhase: 0 } : f
+        ),
+        discoveredFlowers: [...discoveredFlowers, flowerId],
+      });
+    }
+  },
+
+  checkFlowerUnlocks: () => {
+    const { flowers, collectedFragments, explorationProgress } = get();
+    const collectedCount = collectedFragments.length;
+    
+    let hasChanges = false;
+    const updatedFlowers = flowers.map((flower) => {
+      if (!flower.unlocked) {
+        const shouldUnlock = checkFlowerUnlock(flower, collectedCount, explorationProgress);
+        if (shouldUnlock) {
+          hasChanges = true;
+          return { ...flower, unlocked: true };
+        }
+      }
+      return flower;
+    });
+
+    if (hasChanges) {
+      set({ flowers: updatedFlowers });
+    }
+  },
+
   updateFog: () => {
     const { butterfly, fogGrid, fogCellSize } = get();
     const newGrid = fogGrid.map((row) => row.map((cell) => ({ ...cell })));
@@ -417,6 +491,10 @@ export const useGameStore = create<GameState & {
       currentStory: null,
       showStoryBook: false,
       particles: [],
+      flowers: createInitialFlowers(),
+      discoveredFlowers: [],
+      showFlowerCard: false,
+      currentFlower: null,
       cameraX: 200,
       cameraY: 1600,
       fogGrid: newFog.grid,

@@ -1,15 +1,20 @@
 import { useGameStore } from '../store/gameStore';
-import { BookOpen, Sparkles } from 'lucide-react';
+import { BookOpen, Sparkles, Flower2 } from 'lucide-react';
+import { FLOWER_DATA } from '../data/flowers';
 
 export const HUD = () => {
-  const { fragments, collectedFragments, openStoryBook } = useGameStore();
+  const { fragments, collectedFragments, discoveredFlowers, openStoryBook } = useGameStore();
   const total = fragments.length;
   const collected = collectedFragments.length;
   const progress = (collected / total) * 100;
+  
+  const totalFlowers = FLOWER_DATA.length;
+  const discovered = discoveredFlowers.length;
+  const flowerProgress = (discovered / totalFlowers) * 100;
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
-      <div className="absolute top-6 left-6 pointer-events-auto">
+      <div className="absolute top-6 left-6 pointer-events-auto space-y-3">
         <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-5 h-5 text-yellow-500" />
@@ -24,6 +29,24 @@ export const HUD = () => {
             <div
               className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-700 ease-out"
               style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <Flower2 className="w-5 h-5 text-pink-500" />
+            <span className="text-emerald-700 font-medium tracking-wider">花朵图鉴</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-3xl font-bold text-emerald-600">{discovered}</span>
+            <span className="text-emerald-400">/</span>
+            <span className="text-xl text-emerald-400">{totalFlowers}</span>
+          </div>
+          <div className="w-40 h-2 bg-white/50 rounded-full mt-3 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${flowerProgress}%` }}
             />
           </div>
         </div>
@@ -45,7 +68,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-            WASD 或 方向键 控制飞舞 · 探索迷雾地图 · 收集发光的记忆碎片
+            WASD 或 方向键 控制飞舞 · 探索迷雾地图 · 收集记忆碎片 · 发现花朵记忆
           </p>
         </div>
       </div>

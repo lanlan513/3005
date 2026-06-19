@@ -30,6 +30,7 @@ export default {
         'fade-in': 'fadeIn 0.8s ease-out forwards',
         'fade-in-up': 'fadeInUp 1s ease-out forwards',
         'scale-in': 'scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        'bounce-slow': 'bounceSlow 3s ease-in-out infinite',
       },
       keyframes: {
         float: {
@@ -57,6 +58,10 @@ export default {
         scaleIn: {
           '0%': { opacity: '0', transform: 'scale(0.8)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        bounceSlow: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-10px)' },
         },
       },
     },

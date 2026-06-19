@@ -3,6 +3,7 @@ import { HUD } from '../components/HUD';
 import { MiniMap } from '../components/MiniMap';
 import { StoryModal } from '../components/StoryModal';
 import { StoryBook } from '../components/StoryBook';
+import { FlowerCard } from '../components/FlowerCard';
 
 export const Game = () => {
   return (
@@ -12,6 +13,7 @@ export const Game = () => {
       <MiniMap />
       <StoryModal />
       <StoryBook />
+      <FlowerCard />
     </div>
   );
 };

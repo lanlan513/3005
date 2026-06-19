@@ -58,12 +58,23 @@ export interface Firefly {
 }
 
 export interface Flower {
+  id: string;
   x: number;
   y: number;
   size: number;
   color: string;
   petalCount: number;
   swayPhase: number;
+  type: string;
+  name: string;
+  unlocked: boolean;
+  discovered: boolean;
+  unlockCondition: string;
+  memory: string;
+  knowledge: string;
+  flowerLanguage: string;
+  bloomPhase: number;
+  pulsePhase: number;
 }
 
 export interface Tree {
@@ -92,6 +103,10 @@ export interface GameState {
   particles: Particle[];
   petals: Petal[];
   fireflies: Firefly[];
+  flowers: Flower[];
+  discoveredFlowers: string[];
+  showFlowerCard: boolean;
+  currentFlower: Flower | null;
   mapWidth: number;
   mapHeight: number;
   cameraX: number;
