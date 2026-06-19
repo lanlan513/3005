@@ -73,6 +73,13 @@ export interface Tree {
   type: 'round' | 'pine' | 'cherry';
 }
 
+export interface FogCell {
+  x: number;
+  y: number;
+  explored: boolean;
+  visibility: number;
+}
+
 export interface GameState {
   butterfly: Butterfly;
   fragments: Fragment[];
@@ -91,4 +98,9 @@ export interface GameState {
   cameraY: number;
   viewportWidth: number;
   viewportHeight: number;
+  fogGrid: FogCell[][];
+  fogCellSize: number;
+  exploredCells: number;
+  totalCells: number;
+  explorationProgress: number;
 }

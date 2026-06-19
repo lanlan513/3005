@@ -45,7 +45,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-            WASD 或 方向键 控制飞舞 · 收集发光的记忆碎片
+            WASD 或 方向键 控制飞舞 · 探索迷雾地图 · 收集发光的记忆碎片
           </p>
         </div>
       </div>

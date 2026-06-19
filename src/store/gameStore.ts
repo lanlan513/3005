@@ -1,7 +1,11 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
+
+const FOG_CELL_SIZE = 40;
+const VISIBILITY_RADIUS = 120;
+const FRAGMENT_RESPAWN_INTERVAL = 15000;
 
 const createInitialButterfly = (): Butterfly => ({
   x: 200,
@@ -45,6 +49,61 @@ const createInitialFireflies = (): Firefly[] => {
   return fireflies;
 };
 
+const createFogGrid = (): { grid: FogCell[][]; total: number } => {
+  const cols = Math.ceil(MAP_WIDTH / FOG_CELL_SIZE);
+  const rows = Math.ceil(MAP_HEIGHT / FOG_CELL_SIZE);
+  const grid: FogCell[][] = [];
+
+  for (let row = 0; row < rows; row++) {
+    grid[row] = [];
+    for (let col = 0; col < cols; col++) {
+      grid[row][col] = {
+        x: col * FOG_CELL_SIZE,
+        y: row * FOG_CELL_SIZE,
+        explored: false,
+        visibility: 0,
+      };
+    }
+  }
+  return { grid, total: cols * rows };
+};
+
+const generateRandomFragments = (count: number, existingIds: string[]): Fragment[] => {
+  const fragments: Fragment[] = [];
+  const colors = ['#FFB6C8', '#9B7EDC', '#A8E6CF', '#FFD93D', '#87CEEB', '#FF9ECD'];
+  const regions = [
+    { minX: 100, maxX: 800, minY: 100, maxY: 600 },
+    { minX: 800, maxX: 1600, minY: 100, maxY: 600 },
+    { minX: 1600, maxX: 2300, minY: 100, maxY: 600 },
+    { minX: 100, maxX: 800, minY: 600, maxY: 1200 },
+    { minX: 800, maxX: 1600, minY: 600, maxY: 1200 },
+    { minX: 1600, maxX: 2300, minY: 600, maxY: 1200 },
+    { minX: 100, maxX: 800, minY: 1200, maxY: 1700 },
+    { minX: 800, maxX: 1600, minY: 1200, maxY: 1700 },
+    { minX: 1600, maxX: 2300, minY: 1200, maxY: 1700 },
+  ];
+
+  for (let i = 0; i < count; i++) {
+    const region = regions[Math.floor(Math.random() * regions.length)];
+    const id = `fragment-random-${Date.now()}-${i}`;
+    if (existingIds.includes(id)) continue;
+
+    fragments.push({
+      id,
+      x: region.minX + Math.random() * (region.maxX - region.minX),
+      y: region.minY + Math.random() * (region.maxY - region.minY),
+      collected: false,
+      storyId: '',
+      glowPhase: Math.random() * Math.PI * 2,
+      floatPhase: Math.random() * Math.PI * 2,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    });
+  }
+  return fragments;
+};
+
+const initialFog = createFogGrid();
+
 export const useGameStore = create<GameState & {
   setButterflyVelocity: (vx: number, vy: number) => void;
   updateButterfly: () => void;
@@ -61,6 +120,9 @@ export const useGameStore = create<GameState & {
   openStoryBook: () => void;
   closeStoryBook: () => void;
   resetGame: () => void;
+  updateFog: () => void;
+  spawnRandomFragments: () => void;
+  updateExplorationProgress: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -79,6 +141,11 @@ export const useGameStore = create<GameState & {
   cameraY: 1600,
   viewportWidth: 800,
   viewportHeight: 600,
+  fogGrid: initialFog.grid,
+  fogCellSize: FOG_CELL_SIZE,
+  exploredCells: 0,
+  totalCells: initialFog.total,
+  explorationProgress: 0,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -275,7 +342,71 @@ export const useGameStore = create<GameState & {
 
   closeStoryBook: () => set({ showStoryBook: false }),
 
+  updateFog: () => {
+    const { butterfly, fogGrid, fogCellSize } = get();
+    const newGrid = fogGrid.map((row) => row.map((cell) => ({ ...cell })));
+    let newExplored = 0;
+
+    const playerCol = Math.floor(butterfly.x / fogCellSize);
+    const playerRow = Math.floor(butterfly.y / fogCellSize);
+    const radiusInCells = Math.ceil(VISIBILITY_RADIUS / fogCellSize);
+
+    for (let row = 0; row < newGrid.length; row++) {
+      for (let col = 0; col < newGrid[row].length; col++) {
+        const cell = newGrid[row][col];
+        const dx = col - playerCol;
+        const dy = row - playerRow;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist <= radiusInCells) {
+          const targetVisibility = Math.max(0, 1 - dist / radiusInCells);
+          cell.visibility = Math.min(1, cell.visibility + (targetVisibility - cell.visibility) * 0.15);
+          if (cell.visibility > 0.3 && !cell.explored) {
+            cell.explored = true;
+          }
+        } else {
+          cell.visibility = Math.max(0, cell.visibility * 0.995);
+        }
+
+        if (cell.explored) newExplored++;
+      }
+    }
+
+    set({ fogGrid: newGrid, exploredCells: newExplored });
+    get().updateExplorationProgress();
+  },
+
+  spawnRandomFragments: () => {
+    const { fragments, collectedFragments } = get();
+    const maxRandomFragments = 4;
+    const currentRandomCount = fragments.filter((f) => f.id.startsWith('fragment-random-') && !f.collected).length;
+    const toSpawn = maxRandomFragments - currentRandomCount;
+
+    if (toSpawn > 0) {
+      const existingIds = fragments.map((f) => f.id);
+      const newFragments = generateRandomFragments(toSpawn, existingIds);
+      set({ fragments: [...fragments, ...newFragments] });
+    }
+
+    const cleanedFragments = fragments.filter((f) => {
+      if (f.id.startsWith('fragment-random-') && f.collected) {
+        return false;
+      }
+      return true;
+    });
+    if (cleanedFragments.length !== fragments.length) {
+      set({ fragments: cleanedFragments });
+    }
+  },
+
+  updateExplorationProgress: () => {
+    const { exploredCells, totalCells } = get();
+    const progress = Math.round((exploredCells / totalCells) * 100);
+    set({ explorationProgress: progress });
+  },
+
   resetGame: () => {
+    const newFog = createFogGrid();
     set({
       butterfly: createInitialButterfly(),
       fragments: INITIAL_FRAGMENTS.map((f) => ({ ...f, collected: false })),
@@ -288,6 +419,10 @@ export const useGameStore = create<GameState & {
       particles: [],
       cameraX: 200,
       cameraY: 1600,
+      fogGrid: newFog.grid,
+      exploredCells: 0,
+      totalCells: newFog.total,
+      explorationProgress: 0,
     });
   },
 }));

@@ -56,6 +56,8 @@ export const GameCanvas = () => {
     viewportHeight,
     mapWidth,
     mapHeight,
+    fogGrid,
+    fogCellSize,
     setButterflyVelocity,
     updateButterfly,
     updateFragments,
@@ -65,6 +67,8 @@ export const GameCanvas = () => {
     updateFireflies,
     updateCamera,
     setViewport,
+    updateFog,
+    spawnRandomFragments,
   } = useGameStore();
 
   useEffect(() => {
@@ -114,6 +118,14 @@ export const GameCanvas = () => {
     }
   };
 
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      spawnRandomFragments();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isPlaying, spawnRandomFragments]);
+
   const gameLoop = () => {
     if (!isPlaying) return;
     timeRef.current += 0.016;
@@ -125,6 +137,7 @@ export const GameCanvas = () => {
     updatePetals();
     updateFireflies();
     updateCamera();
+    updateFog();
     render();
   };
 
@@ -151,6 +164,7 @@ export const GameCanvas = () => {
     drawButterfly(ctx, offsetX, offsetY);
     drawParticles(ctx, offsetX, offsetY);
     drawMapBorder(ctx, offsetX, offsetY);
+    drawFog(ctx, offsetX, offsetY);
   };
 
   const drawGround = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
@@ -494,6 +508,44 @@ export const GameCanvas = () => {
     ctx.setLineDash([20, 15]);
     ctx.strokeRect(ox, oy, mapWidth, mapHeight);
     ctx.restore();
+  };
+
+  const drawFog = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (let row = 0; row < fogGrid.length; row++) {
+      for (let col = 0; col < fogGrid[row].length; col++) {
+        const cell = fogGrid[row][col];
+        const x = cell.x + ox;
+        const y = cell.y + oy;
+
+        if (x < -fogCellSize || x > viewportWidth + fogCellSize ||
+            y < -fogCellSize || y > viewportHeight + fogCellSize) {
+          continue;
+        }
+
+        let fogAlpha = 0;
+        if (cell.explored) {
+          fogAlpha = 0.15 + (1 - cell.visibility) * 0.4;
+        } else {
+          fogAlpha = 0.85;
+        }
+
+        if (fogAlpha > 0.01) {
+          ctx.fillStyle = `rgba(30, 20, 50, ${fogAlpha})`;
+          ctx.fillRect(x, y, fogCellSize + 1, fogCellSize + 1);
+
+          if (cell.explored && cell.visibility > 0.3) {
+            const gradient = ctx.createRadialGradient(
+              x + fogCellSize / 2, y + fogCellSize / 2, 0,
+              x + fogCellSize / 2, y + fogCellSize / 2, fogCellSize
+            );
+            gradient.addColorStop(0, `rgba(155, 126, 220, ${cell.visibility * 0.15})`);
+            gradient.addColorStop(1, 'rgba(155, 126, 220, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x - fogCellSize, y - fogCellSize, fogCellSize * 3, fogCellSize * 3);
+          }
+        }
+      }
+    }
   };
 
   return (
