@@ -80,6 +80,7 @@ export const GameCanvas = () => {
     dreamRegions,
     dreamDecorations,
     dynamicParticles,
+    mapBounds,
     setButterflyVelocity,
     updateButterfly,
     updateFragments,
@@ -111,6 +112,7 @@ export const GameCanvas = () => {
     updateDreamDecorations,
     spawnDynamicParticles,
     updateDynamicParticles,
+    updateRegionAnimation,
   } = useGameStore();
 
   useEffect(() => {
@@ -287,6 +289,7 @@ export const GameCanvas = () => {
     updateDreamDecorations();
     spawnDynamicParticles();
     updateDynamicParticles();
+    updateRegionAnimation();
     if (Math.random() < 0.008) {
       triggerHint();
     }
@@ -368,62 +371,70 @@ export const GameCanvas = () => {
 
   const drawDreamRegions = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
     for (const region of dreamRegions) {
+      if (!region.unlocked) continue;
+
       const x = region.x + ox;
       const y = region.y + oy;
       
       if (x + region.width < -100 || x > viewportWidth + 100 || 
           y + region.height < -100 || y > viewportHeight + 100) continue;
 
+      const animPhase = region.animationPhase ?? 1;
+
       ctx.save();
 
-      if (region.unlocked) {
-        const gradient = ctx.createRadialGradient(
-          x + region.width / 2, y + region.height / 2, 0,
-          x + region.width / 2, y + region.height / 2, Math.max(region.width, region.height) / 2
-        );
-        gradient.addColorStop(0, region.bgColor + 'AA');
-        gradient.addColorStop(0.6, region.bgColor + '66');
-        gradient.addColorStop(1, region.bgColor + '00');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(x - 30, y - 30, region.width + 60, region.height + 60);
+      if (animPhase < 1) {
+        ctx.save();
+        ctx.beginPath();
+        const cx = x + region.width / 2;
+        const cy = y + region.height / 2;
+        const maxRadius = Math.max(region.width, region.height);
+        ctx.arc(cx, cy, maxRadius * animPhase, 0, Math.PI * 2);
+        ctx.clip();
+      }
 
-        const borderGradient = ctx.createLinearGradient(x, y, x + region.width, y + region.height);
-        borderGradient.addColorStop(0, region.themeColor + '88');
-        borderGradient.addColorStop(0.5, region.themeColor + '44');
-        borderGradient.addColorStop(1, region.themeColor + '88');
-        ctx.strokeStyle = borderGradient;
-        ctx.lineWidth = 4;
-        ctx.setLineDash([15, 8]);
-        ctx.lineDashOffset = timeRef.current * 10;
-        ctx.strokeRect(x, y, region.width, region.height);
-        ctx.setLineDash([]);
+      const gradient = ctx.createRadialGradient(
+        x + region.width / 2, y + region.height / 2, 0,
+        x + region.width / 2, y + region.height / 2, Math.max(region.width, region.height) / 2
+      );
+      gradient.addColorStop(0, region.bgColor + 'AA');
+      gradient.addColorStop(0.6, region.bgColor + '66');
+      gradient.addColorStop(1, region.bgColor + '00');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x - 30, y - 30, region.width + 60, region.height + 60);
 
-        drawRegionTerrain(ctx, region, x, y);
+      const borderGradient = ctx.createLinearGradient(x, y, x + region.width, y + region.height);
+      borderGradient.addColorStop(0, region.themeColor + '88');
+      borderGradient.addColorStop(0.5, region.themeColor + '44');
+      borderGradient.addColorStop(1, region.themeColor + '88');
+      ctx.strokeStyle = borderGradient;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([15, 8]);
+      ctx.lineDashOffset = timeRef.current * 10;
+      ctx.strokeRect(x, y, region.width, region.height);
+      ctx.setLineDash([]);
 
-        ctx.fillStyle = region.themeColor;
-        ctx.font = 'bold 18px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(region.name, x + region.width / 2, y + 35);
-        
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.font = '13px sans-serif';
-        ctx.fillText(region.description, x + region.width / 2, y + 55);
-      } else {
-        const hintAlpha = 0.08 + Math.sin(timeRef.current * 1.2 + region.order) * 0.04;
-        ctx.fillStyle = region.themeColor + Math.floor(hintAlpha * 255).toString(16).padStart(2, '0');
-        ctx.fillRect(x, y, region.width, region.height);
-        
-        ctx.strokeStyle = region.themeColor + '22';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 10]);
-        ctx.strokeRect(x, y, region.width, region.height);
-        ctx.setLineDash([]);
+      drawRegionTerrain(ctx, region, x, y);
 
-        ctx.fillStyle = region.themeColor + '66';
-        ctx.font = 'bold 28px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('?', x + region.width / 2, y + region.height / 2);
+      ctx.fillStyle = region.themeColor;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(region.name, x + region.width / 2, y + 35);
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.font = '13px sans-serif';
+      ctx.fillText(region.description, x + region.width / 2, y + 55);
+
+      if (animPhase < 1) {
+        ctx.restore();
+        const cx = x + region.width / 2;
+        const cy = y + region.height / 2;
+        const maxRadius = Math.max(region.width, region.height);
+        const glowGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxRadius * animPhase);
+        glowGradient.addColorStop(0, region.themeColor + Math.floor((1 - animPhase) * 200).toString(16).padStart(2, '0'));
+        glowGradient.addColorStop(1, region.themeColor + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.fillRect(x - 100, y - 100, region.width + 200, region.height + 200);
       }
       
       ctx.restore();
@@ -1401,11 +1412,85 @@ export const GameCanvas = () => {
   };
 
   const drawMapBorder = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    const bx = mapBounds.minX + ox;
+    const by = mapBounds.minY + oy;
+    const bw = mapBounds.maxX - mapBounds.minX;
+    const bh = mapBounds.maxY - mapBounds.minY;
+    const time = timeRef.current;
+
     ctx.save();
-    ctx.strokeStyle = 'rgba(155, 126, 220, 0.4)';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([20, 15]);
-    ctx.strokeRect(ox, oy, mapWidth, mapHeight);
+
+    ctx.fillStyle = '#1a1a2e';
+    if (bx > 0) ctx.fillRect(0, 0, bx, viewportHeight);
+    if (bx + bw < viewportWidth) ctx.fillRect(bx + bw, 0, viewportWidth - bx - bw, viewportHeight);
+    if (by > 0) ctx.fillRect(0, 0, viewportWidth, by);
+    if (by + bh < viewportHeight) ctx.fillRect(0, by + bh, viewportWidth, viewportHeight - by - bh);
+
+    ctx.fillStyle = 'rgba(100, 100, 150, 0.15)';
+    for (let i = 0; i < 40; i++) {
+      const seed = i * 0.7;
+      const wave = Math.sin(time * 0.5 + seed) * 20;
+      if (bx > 0) {
+        ctx.beginPath();
+        const py = (i * viewportHeight) / 40;
+        ctx.ellipse(bx + wave, py, 15 + Math.sin(time + i) * 5, 40, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (bx + bw < viewportWidth) {
+        ctx.beginPath();
+        const py = (i * viewportHeight) / 40;
+        ctx.ellipse(bx + bw - wave, py, 15 + Math.sin(time + i) * 5, 40, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    for (let i = 0; i < 40; i++) {
+      const seed = i * 0.7;
+      const wave = Math.cos(time * 0.5 + seed) * 20;
+      if (by > 0) {
+        ctx.beginPath();
+        const px = (i * viewportWidth) / 40;
+        ctx.ellipse(px, by + wave, 40, 15 + Math.sin(time + i) * 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (by + bh < viewportHeight) {
+        ctx.beginPath();
+        const px = (i * viewportWidth) / 40;
+        ctx.ellipse(px, by + bh - wave, 40, 15 + Math.sin(time + i) * 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    const borderColors = ['#9B7EDC', '#FFB6C8', '#A8E6CF', '#FFD93D'];
+    const borderPulse = (Math.sin(time * 2) + 1) / 2;
+    const borderWidth = 3 + borderPulse * 2;
+    
+    for (let i = 0; i < 2; i++) {
+      ctx.strokeStyle = borderColors[i % borderColors.length] + (i === 0 ? 'CC' : '66');
+      ctx.lineWidth = borderWidth - i * 2;
+      ctx.setLineDash([10 + Math.sin(time + i) * 3, 8]);
+      ctx.lineDashOffset = time * 15 * (i === 0 ? 1 : -1);
+      ctx.strokeRect(bx + i, by + i, bw - i * 2, bh - i * 2);
+    }
+    ctx.setLineDash([]);
+
+    const corners = [
+      { x: bx, y: by },
+      { x: bx + bw, y: by },
+      { x: bx, y: by + bh },
+      { x: bx + bw, y: by + bh },
+    ];
+    for (const corner of corners) {
+      const sparkleSize = 8 + borderPulse * 4;
+      const sparkle = ctx.createRadialGradient(corner.x, corner.y, 0, corner.x, corner.y, sparkleSize * 2);
+      sparkle.addColorStop(0, '#FFFFFF');
+      sparkle.addColorStop(0.3, '#9B7EDC');
+      sparkle.addColorStop(1, 'rgba(155, 126, 220, 0)');
+      ctx.fillStyle = sparkle;
+      ctx.beginPath();
+      ctx.arc(corner.x, corner.y, sparkleSize * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   };
 

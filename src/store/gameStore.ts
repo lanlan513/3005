@@ -24,6 +24,9 @@ import {
   DREAM_REGIONS,
   generateRegionDecorations,
   getRegionByFragmentId,
+  getInitialMapBounds,
+  calculateMapBounds,
+  START_REGION,
 } from '../data/dreamRegions';
 
 const FOG_CELL_SIZE = 40;
@@ -37,8 +40,8 @@ const GLIDE_ENERGY_REGEN = 0.5;
 const GLIDE_ENERGY_DRAIN = 0.8;
 
 const createInitialButterfly = (): Butterfly => ({
-  x: 200,
-  y: 1600,
+  x: START_REGION.x + START_REGION.width / 2,
+  y: START_REGION.y + START_REGION.height / 2,
   vx: 0,
   vy: 0,
   rotation: -Math.PI / 4,
@@ -197,6 +200,9 @@ export const useGameStore = create<GameState & {
   spawnDynamicParticles: () => void;
   closeRegionUnlock: () => void;
   updateDreamDecorations: () => void;
+  clampButterflyToBounds: () => void;
+  updateRegionAnimation: () => void;
+  isInUnlockedRegion: (x: number, y: number) => boolean;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -215,8 +221,8 @@ export const useGameStore = create<GameState & {
   currentFlower: null,
   mapWidth: MAP_WIDTH,
   mapHeight: MAP_HEIGHT,
-  cameraX: 200,
-  cameraY: 1600,
+  cameraX: START_REGION.x + START_REGION.width / 2,
+  cameraY: START_REGION.y + START_REGION.height / 2,
   viewportWidth: 800,
   viewportHeight: 600,
   fogGrid: initialFog.grid,
@@ -241,10 +247,11 @@ export const useGameStore = create<GameState & {
   showHint: false,
   lastHintTime: 0,
   dreamRegions: [...DREAM_REGIONS],
-  dreamDecorations: [],
+  dreamDecorations: generateRegionDecorations(START_REGION),
   dynamicParticles: [],
   showRegionUnlock: false,
   unlockRegion: null,
+  mapBounds: getInitialMapBounds(),
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -269,16 +276,20 @@ export const useGameStore = create<GameState & {
   },
 
   updateButterfly: () => {
-    const { butterfly, mapWidth, mapHeight, abilityLevel } = get();
+    const { butterfly, mapBounds, abilityLevel } = get();
     const friction = butterfly.isGliding ? 0.98 - abilityLevel.glideEfficiency * 0.03 : 0.92;
     let newX = butterfly.x + butterfly.vx;
     let newY = butterfly.y + butterfly.vy;
-    const newVx = butterfly.vx * friction;
-    const newVy = butterfly.vy * friction;
+    let newVx = butterfly.vx * friction;
+    let newVy = butterfly.vy * friction;
 
     const margin = 50;
-    newX = Math.max(margin, Math.min(mapWidth - margin, newX));
-    newY = Math.max(margin, Math.min(mapHeight - margin, newY));
+    const clampedX = Math.max(mapBounds.minX + margin, Math.min(mapBounds.maxX - margin, newX));
+    const clampedY = Math.max(mapBounds.minY + margin, Math.min(mapBounds.maxY - margin, newY));
+    if (clampedX !== newX) newVx *= -0.3;
+    if (clampedY !== newY) newVy *= -0.3;
+    newX = clampedX;
+    newY = clampedY;
 
     const newDashCooldown = Math.max(0, butterfly.dashCooldown - 1);
     const newIsDashing = butterfly.isDashing && newDashCooldown > DASH_COOLDOWN - 10;
@@ -792,8 +803,8 @@ export const useGameStore = create<GameState & {
       discoveredFlowers: [],
       showFlowerCard: false,
       currentFlower: null,
-      cameraX: 200,
-      cameraY: 1600,
+      cameraX: START_REGION.x + START_REGION.width / 2,
+      cameraY: START_REGION.y + START_REGION.height / 2,
       fogGrid: newFog.grid,
       exploredCells: 0,
       totalCells: newFog.total,
@@ -813,10 +824,11 @@ export const useGameStore = create<GameState & {
       showHint: false,
       lastHintTime: 0,
       dreamRegions: [...DREAM_REGIONS],
-      dreamDecorations: [],
+      dreamDecorations: generateRegionDecorations(START_REGION),
       dynamicParticles: [],
       showRegionUnlock: false,
       unlockRegion: null,
+      mapBounds: getInitialMapBounds(),
     });
   },
 
@@ -1035,19 +1047,67 @@ export const useGameStore = create<GameState & {
     if (!region || region.unlocked) return;
 
     const newDecorations = generateRegionDecorations(region);
+    const updatedRegions = dreamRegions.map((r) =>
+      r.id === region.id ? { ...r, unlocked: true, animationPhase: 0 } : r
+    );
+    const newBounds = calculateMapBounds(updatedRegions);
 
     set({
-      dreamRegions: dreamRegions.map((r) =>
-        r.id === region.id ? { ...r, unlocked: true } : r
-      ),
+      dreamRegions: updatedRegions,
       dreamDecorations: [...dreamDecorations, ...newDecorations],
       showRegionUnlock: true,
       unlockRegion: { ...region, unlocked: true },
+      mapBounds: newBounds,
     });
   },
 
   closeRegionUnlock: () => {
     set({ showRegionUnlock: false, unlockRegion: null });
+  },
+
+  clampButterflyToBounds: () => {
+    const { butterfly, mapBounds } = get();
+    const margin = 50;
+    const clampedX = Math.max(mapBounds.minX + margin, Math.min(mapBounds.maxX - margin, butterfly.x));
+    const clampedY = Math.max(mapBounds.minY + margin, Math.min(mapBounds.maxY - margin, butterfly.y));
+    if (clampedX !== butterfly.x || clampedY !== butterfly.y) {
+      set({
+        butterfly: {
+          ...butterfly,
+          x: clampedX,
+          y: clampedY,
+          vx: butterfly.vx * -0.3,
+          vy: butterfly.vy * -0.3,
+        },
+      });
+    }
+  },
+
+  updateRegionAnimation: () => {
+    const { dreamRegions } = get();
+    let needsUpdate = false;
+    const updated = dreamRegions.map((r) => {
+      if (r.unlocked && r.animationPhase !== undefined && r.animationPhase < 1) {
+        needsUpdate = true;
+        return { ...r, animationPhase: Math.min(1, (r.animationPhase || 0) + 0.02) };
+      }
+      return r;
+    });
+    if (needsUpdate) {
+      set({ dreamRegions: updated });
+    }
+  },
+
+  isInUnlockedRegion: (x: number, y: number) => {
+    const { dreamRegions } = get();
+    return dreamRegions.some(
+      (r) =>
+        r.unlocked &&
+        x >= r.x &&
+        x <= r.x + r.width &&
+        y >= r.y &&
+        y <= r.y + r.height
+    );
   },
 
   updateDreamDecorations: () => {

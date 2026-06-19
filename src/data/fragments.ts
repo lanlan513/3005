@@ -1,13 +1,23 @@
 import { Fragment } from '../types/game';
+import { START_REGION, DREAM_REGIONS } from './dreamRegions';
 
 export const MAP_WIDTH = 2400;
 export const MAP_HEIGHT = 1800;
 
+const getRegionCenter = (regionId: string) => {
+  const region = DREAM_REGIONS.find(r => r.id === regionId);
+  if (!region) return { x: 1000, y: 1000 };
+  return {
+    x: region.x + region.width / 2,
+    y: region.y + region.height / 2,
+  };
+};
+
 export const INITIAL_FRAGMENTS: Fragment[] = [
   {
     id: 'fragment-1',
-    x: 400,
-    y: 500,
+    x: START_REGION.x + START_REGION.width * 0.3,
+    y: START_REGION.y + START_REGION.height * 0.35,
     collected: false,
     storyId: 'story-1',
     glowPhase: 0,
@@ -15,39 +25,39 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     color: '#FFB6C8',
   },
   {
-    id: 'fragment-2',
-    x: 1200,
-    y: 300,
+    id: 'fragment-4',
+    x: START_REGION.x + START_REGION.width * 0.7,
+    y: START_REGION.y + START_REGION.height * 0.65,
     collected: false,
-    storyId: 'story-2',
+    storyId: 'story-4',
     glowPhase: Math.PI / 3,
     floatPhase: Math.PI / 4,
-    color: '#9B7EDC',
+    color: '#FF8C42',
+  },
+  {
+    id: 'fragment-2',
+    x: getRegionCenter('region-cherry').x,
+    y: getRegionCenter('region-cherry').y,
+    collected: false,
+    storyId: 'story-2',
+    glowPhase: Math.PI / 2,
+    floatPhase: Math.PI / 2,
+    color: '#FF6B9D',
   },
   {
     id: 'fragment-3',
-    x: 2000,
-    y: 600,
+    x: getRegionCenter('region-rose').x,
+    y: getRegionCenter('region-rose').y,
     collected: false,
     storyId: 'story-3',
-    glowPhase: Math.PI / 2,
-    floatPhase: Math.PI / 2,
-    color: '#A8E6CF',
-  },
-  {
-    id: 'fragment-4',
-    x: 600,
-    y: 1200,
-    collected: false,
-    storyId: 'story-4',
     glowPhase: Math.PI,
     floatPhase: Math.PI,
     color: '#FFD93D',
   },
   {
     id: 'fragment-5',
-    x: 1800,
-    y: 1400,
+    x: getRegionCenter('region-maple').x,
+    y: getRegionCenter('region-maple').y,
     collected: false,
     storyId: 'story-5',
     glowPhase: Math.PI * 1.2,
@@ -56,12 +66,12 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
   },
   {
     id: 'fragment-6',
-    x: 1200,
-    y: 900,
+    x: getRegionCenter('region-snow').x,
+    y: getRegionCenter('region-snow').y,
     collected: false,
     storyId: 'story-6',
     glowPhase: Math.PI * 1.5,
     floatPhase: Math.PI * 0.7,
-    color: '#FFB6C8',
+    color: '#9B7EDC',
   },
 ];

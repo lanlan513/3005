@@ -10,8 +10,7 @@ export const MiniMap = () => {
     flowers,
     fogGrid,
     fogCellSize,
-    mapWidth,
-    mapHeight,
+    mapBounds,
     cameraX,
     cameraY,
     viewportWidth,
@@ -24,8 +23,16 @@ export const MiniMap = () => {
 
   const miniMapWidth = 180;
   const miniMapHeight = 135;
-  const scaleX = miniMapWidth / mapWidth;
-  const scaleY = miniMapHeight / mapHeight;
+  const worldW = mapBounds.maxX - mapBounds.minX;
+  const worldH = mapBounds.maxY - mapBounds.minY;
+  const scaleX = miniMapWidth / worldW;
+  const scaleY = miniMapHeight / worldH;
+  const scale = Math.min(scaleX, scaleY);
+
+  const worldToMini = (wx: number, wy: number) => ({
+    x: (wx - mapBounds.minX) * scale,
+    y: (wy - mapBounds.minY) * scale,
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,19 +45,40 @@ export const MiniMap = () => {
     ctx.fillStyle = 'rgba(30, 20, 50, 0.9)';
     ctx.fillRect(0, 0, miniMapWidth, miniMapHeight);
 
+    for (const region of dreamRegions) {
+      if (!region.unlocked) continue;
+      const r1 = worldToMini(region.x, region.y);
+      const rw = region.width * scale;
+      const rh = region.height * scale;
+
+      ctx.fillStyle = region.themeColor + '35';
+      ctx.fillRect(r1.x, r1.y, rw, rh);
+      ctx.strokeStyle = region.themeColor + 'AA';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 2]);
+      ctx.strokeRect(r1.x, r1.y, rw, rh);
+      ctx.setLineDash([]);
+      
+      ctx.fillStyle = region.themeColor;
+      ctx.font = 'bold 7px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(region.name, r1.x + rw / 2, r1.y + rh / 2 + 3);
+    }
+
     for (let row = 0; row < fogGrid.length; row++) {
       for (let col = 0; col < fogGrid[row].length; col++) {
         const cell = fogGrid[row][col];
-        if (cell.explored) {
-          const x = cell.x * scaleX;
-          const y = cell.y * scaleY;
-          const w = fogCellSize * scaleX + 1;
-          const h = fogCellSize * scaleY + 1;
+        if (!cell.explored) continue;
+        if (cell.x < mapBounds.minX || cell.x > mapBounds.maxX ||
+            cell.y < mapBounds.minY || cell.y > mapBounds.maxY) continue;
+        
+        const p = worldToMini(cell.x, cell.y);
+        const w = fogCellSize * scale + 1;
+        const h = fogCellSize * scale + 1;
 
-          const brightness = Math.floor(60 + cell.visibility * 80);
-          ctx.fillStyle = `rgba(${brightness}, ${brightness - 20}, ${brightness + 40}, ${0.3 + cell.visibility * 0.5})`;
-          ctx.fillRect(x, y, w, h);
-        }
+        const brightness = Math.floor(60 + cell.visibility * 80);
+        ctx.fillStyle = `rgba(${brightness}, ${brightness - 20}, ${brightness + 40}, ${0.3 + cell.visibility * 0.5})`;
+        ctx.fillRect(p.x, p.y, w, h);
       }
     }
 
@@ -58,20 +86,21 @@ export const MiniMap = () => {
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, miniMapWidth, miniMapHeight);
 
-    const viewportMapX = (cameraX - viewportWidth / 2) * scaleX;
-    const viewportMapY = (cameraY - viewportHeight / 2) * scaleY;
-    const viewportMapW = viewportWidth * scaleX;
-    const viewportMapH = viewportHeight * scaleY;
+    const vp = worldToMini(cameraX - viewportWidth / 2, cameraY - viewportHeight / 2);
+    const viewportMapW = viewportWidth * scale;
+    const viewportMapH = viewportHeight * scale;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
-    ctx.strokeRect(viewportMapX, viewportMapY, viewportMapW, viewportMapH);
+    ctx.strokeRect(vp.x, vp.y, viewportMapW, viewportMapH);
     ctx.setLineDash([]);
 
     for (const flower of flowers) {
       if (flower.type === 'decorative') continue;
-      const fx = flower.x * scaleX;
-      const fy = flower.y * scaleY;
+      if (flower.x < mapBounds.minX || flower.x > mapBounds.maxX ||
+          flower.y < mapBounds.minY || flower.y > mapBounds.maxY) continue;
+      
+      const fp = worldToMini(flower.x, flower.y);
 
       if (flower.discovered) {
         ctx.fillStyle = flower.color;
@@ -79,8 +108,8 @@ export const MiniMap = () => {
         for (let i = 0; i < 5; i++) {
           const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
           const r = i % 2 === 0 ? 4 : 2;
-          const px = fx + Math.cos(angle) * r;
-          const py = fy + Math.sin(angle) * r;
+          const px = fp.x + Math.cos(angle) * r;
+          const py = fp.y + Math.sin(angle) * r;
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -92,7 +121,7 @@ export const MiniMap = () => {
       } else if (flower.unlocked) {
         ctx.fillStyle = flower.color + 'AA';
         ctx.beginPath();
-        ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+        ctx.arc(fp.x, fp.y, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 1;
@@ -104,14 +133,16 @@ export const MiniMap = () => {
 
     for (const fragment of fragments) {
       if (fragment.collected) continue;
-      const fx = fragment.x * scaleX;
-      const fy = fragment.y * scaleY;
+      if (fragment.x < mapBounds.minX || fragment.x > mapBounds.maxX ||
+          fragment.y < mapBounds.minY || fragment.y > mapBounds.maxY) continue;
+      
+      const fp = worldToMini(fragment.x, fragment.y);
       const isStoryFragment = !fragment.id.startsWith('fragment-random-');
 
       if (isStoryFragment) {
         ctx.fillStyle = fragment.color;
         ctx.beginPath();
-        ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+        ctx.arc(fp.x, fp.y, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 1;
@@ -119,98 +150,63 @@ export const MiniMap = () => {
       } else {
         ctx.fillStyle = fragment.color;
         ctx.beginPath();
-        ctx.arc(fx, fy, 2, 0, Math.PI * 2);
+        ctx.arc(fp.x, fp.y, 2, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    for (const region of dreamRegions) {
-      const rx = region.x * scaleX;
-      const ry = region.y * scaleY;
-      const rw = region.width * scaleX;
-      const rh = region.height * scaleY;
-
-      if (region.unlocked) {
-        ctx.fillStyle = region.themeColor + '35';
-        ctx.fillRect(rx, ry, rw, rh);
-        ctx.strokeStyle = region.themeColor + 'AA';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 2]);
-        ctx.strokeRect(rx, ry, rw, rh);
-        ctx.setLineDash([]);
-        
-        ctx.fillStyle = region.themeColor;
-        ctx.font = 'bold 8px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(region.name, rx + rw / 2, ry + rh / 2 + 3);
-      } else {
-        ctx.fillStyle = region.themeColor + '10';
-        ctx.fillRect(rx, ry, rw, rh);
-        ctx.strokeStyle = region.themeColor + '25';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
-        ctx.strokeRect(rx, ry, rw, rh);
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = region.themeColor + '55';
-        ctx.font = 'bold 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('?', rx + rw / 2, ry + rh / 2);
-      }
-    }
-
     for (const area of hiddenAreas) {
-      const ax = area.x * scaleX;
-      const ay = area.y * scaleY;
-      const aw = area.width * scaleX;
-      const ah = area.height * scaleY;
+      if (area.x < mapBounds.minX || area.x > mapBounds.maxX ||
+          area.y < mapBounds.minY || area.y > mapBounds.maxY) continue;
+
+      const ap1 = worldToMini(area.x, area.y);
+      const aw = area.width * scale;
+      const ah = area.height * scale;
 
       const ability = abilities.find(a => a.id === area.requiredAbility);
       const canDiscover = ability && ability.unlocked;
 
       if (area.discovered) {
         ctx.fillStyle = area.color + '40';
-        ctx.fillRect(ax, ay, aw, ah);
+        ctx.fillRect(ap1.x, ap1.y, aw, ah);
         ctx.strokeStyle = area.color;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([3, 2]);
-        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.strokeRect(ap1.x, ap1.y, aw, ah);
         ctx.setLineDash([]);
         
         ctx.fillStyle = area.color;
         ctx.font = '8px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('⭐', ax + aw / 2, ay + ah / 2 + 3);
+        ctx.fillText('⭐', ap1.x + aw / 2, ap1.y + ah / 2 + 3);
       } else if (canDiscover) {
         ctx.fillStyle = area.color + '15';
-        ctx.fillRect(ax, ay, aw, ah);
+        ctx.fillRect(ap1.x, ap1.y, aw, ah);
         ctx.strokeStyle = area.color + '40';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2, 2]);
-        ctx.strokeRect(ax, ay, aw, ah);
+        ctx.strokeRect(ap1.x, ap1.y, aw, ah);
         ctx.setLineDash([]);
       }
     }
 
-    const px = butterfly.x * scaleX;
-    const py = butterfly.y * scaleY;
+    const bp = worldToMini(butterfly.x, butterfly.y);
     ctx.fillStyle = '#FFD93D';
     ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.arc(bp.x, bp.y, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#FFF';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    const glow = ctx.createRadialGradient(px, py, 0, px, py, 10);
+    const glow = ctx.createRadialGradient(bp.x, bp.y, 0, bp.x, bp.y, 10);
     glow.addColorStop(0, 'rgba(255, 217, 61, 0.5)');
     glow.addColorStop(1, 'rgba(255, 217, 61, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.arc(bp.x, bp.y, 10, 0, Math.PI * 2);
     ctx.fill();
-  }, [butterfly, fragments, flowers, fogGrid, fogCellSize, mapWidth, mapHeight, cameraX, cameraY, viewportWidth, viewportHeight, dreamRegions, hiddenAreas, abilities]);
+  }, [butterfly, fragments, flowers, fogGrid, fogCellSize, mapBounds, cameraX, cameraY, viewportWidth, viewportHeight, dreamRegions, hiddenAreas, abilities]);
 
   return (
     <div className="fixed bottom-6 right-6 pointer-events-auto z-20">

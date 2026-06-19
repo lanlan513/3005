@@ -186,6 +186,8 @@ export interface DreamDecoration {
   phase: number;
 }
 
+export type ConnectDirection = 'north' | 'south' | 'east' | 'west' | 'northeast' | 'northwest' | 'southeast' | 'southwest';
+
 export interface DreamRegion {
   id: string;
   name: string;
@@ -203,7 +205,18 @@ export interface DreamRegion {
   dynamicType: DynamicTerrainType;
   decorationCount: number;
   order: number;
+  isStart?: boolean;
+  connectsTo?: string[];
+  connectDirection?: ConnectDirection;
   unlockProgress?: number;
+  animationPhase?: number;
+}
+
+export interface MapBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
 }
 
 export interface DynamicParticle {
@@ -259,4 +272,5 @@ export interface GameState extends CompanionState {
   dynamicParticles: DynamicParticle[];
   showRegionUnlock: boolean;
   unlockRegion: DreamRegion | null;
+  mapBounds: MapBounds;
 }
