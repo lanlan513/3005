@@ -1,4 +1,4 @@
-import { ButterflyCompanion, CompanionAbility } from '../types/game';
+import { ButterflyCompanion, CompanionAbility, HintInfo, HintType, Fragment, Flower, HiddenArea } from '../types/game';
 
 export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
   {
@@ -18,6 +18,7 @@ export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
     encounterTarget: 10,
     abilityPower: 0.3,
     quote: '迷雾挡不住我好奇的眼睛~跟着我，我会为你照亮前路！',
+    encounterCooldownUntil: 0,
   },
   {
     id: 'pathfinder',
@@ -36,6 +37,7 @@ export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
     encounterTarget: 5,
     abilityPower: 0.4,
     quote: '每条隐藏的道路都有它的故事...让我帮你找到它们。',
+    encounterCooldownUntil: 0,
   },
   {
     id: 'wisdom',
@@ -54,6 +56,7 @@ export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
     encounterTarget: 30,
     abilityPower: 0.5,
     quote: '谜题的答案往往就在你眼前...只是需要换个角度看。',
+    encounterCooldownUntil: 0,
   },
   {
     id: 'breeze',
@@ -72,6 +75,7 @@ export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
     encounterTarget: 1,
     abilityPower: 0.35,
     quote: '嘿嘿~我转圈圈的时候会有风哦！迷雾什么的一下子就散啦！',
+    encounterCooldownUntil: 0,
   },
   {
     id: 'secret',
@@ -90,6 +94,7 @@ export const INITIAL_COMPANIONS: ButterflyCompanion[] = [
     encounterTarget: 1,
     abilityPower: 0.45,
     quote: '......我、我知道那边好像有什么...你、你可以去看看吗...',
+    encounterCooldownUntil: 0,
   },
 ];
 
@@ -185,4 +190,141 @@ export const getCompanionEncounterProgress = (
   }
 
   return 0;
+};
+
+const getDirectionName = (angle: number): string => {
+  const normalized = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const sector = Math.round(normalized / (Math.PI / 4));
+  const directions = ['东', '东南', '南', '西南', '西', '西北', '北', '东北'];
+  return directions[sector % 8];
+};
+
+const hintTexts: Record<HintType, string[]> = {
+  fragment: [
+    '我感觉到附近有记忆碎片在闪烁~',
+    '那边好像有记忆碎片的气息...',
+    '快看！有记忆碎片在那个方向！',
+    '如果你寻找记忆碎片的话，往那边走就对了~',
+  ],
+  flower: [
+    '附近有一朵美丽的花在等你发现~',
+    '花香从那个方向飘过来了...',
+    '我嗅到了花朵的气息！',
+    '好像有一朵特别的花在那边哦~',
+  ],
+  hidden: [
+    '那里似乎藏着什么秘密...',
+    '隐藏的区域就在那个方向！',
+    '我感应到了不寻常的气息...',
+    '那个地方很特别，值得去看看~',
+  ],
+  companion: [
+    '有一只蝴蝶伙伴在附近...',
+    '那个方向有我们的同类~',
+    '我感觉到了另一只蝴蝶的存在！',
+    '快去看看，有新伙伴在等你~',
+  ],
+};
+
+export const generateHint = (
+  playerX: number,
+  playerY: number,
+  fragments: Fragment[],
+  flowers: Flower[],
+  hiddenAreas: HiddenArea[],
+  companions: ButterflyCompanion[]
+): HintInfo | null => {
+  const candidates: { type: HintType; id: string; name: string; x: number; y: number }[] = [];
+
+  for (const fragment of fragments) {
+    if (!fragment.collected) {
+      candidates.push({
+        type: 'fragment',
+        id: fragment.id,
+        name: '记忆碎片',
+        x: fragment.x,
+        y: fragment.y,
+      });
+    }
+  }
+
+  for (const flower of flowers) {
+    if (flower.type === 'decorative') continue;
+    if (flower.unlocked && !flower.discovered) {
+      candidates.push({
+        type: 'flower',
+        id: flower.id,
+        name: flower.name,
+        x: flower.x,
+        y: flower.y,
+      });
+    }
+  }
+
+  for (const area of hiddenAreas) {
+    if (!area.discovered) {
+      candidates.push({
+        type: 'hidden',
+        id: area.id,
+        name: area.name,
+        x: area.x + area.width / 2,
+        y: area.y + area.height / 2,
+      });
+    }
+  }
+
+  for (const companion of companions) {
+    if (!companion.unlocked) {
+      candidates.push({
+        type: 'companion',
+        id: companion.id,
+        name: `${companion.name}（蝴蝶伙伴）`,
+        x: companion.x,
+        y: companion.y,
+      });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  let nearest = candidates[0];
+  let minDist = Infinity;
+
+  for (const candidate of candidates) {
+    const dx = candidate.x - playerX;
+    const dy = candidate.y - playerY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = candidate;
+    }
+  }
+
+  const dx = nearest.x - playerX;
+  const dy = nearest.y - playerY;
+  const angle = Math.atan2(dy, dx);
+  const direction = getDirectionName(angle);
+  const distance = Math.round(minDist);
+
+  const texts = hintTexts[nearest.type];
+  const hintText = texts[Math.floor(Math.random() * texts.length)];
+
+  return {
+    type: nearest.type,
+    targetId: nearest.id,
+    targetName: nearest.name,
+    direction,
+    distance,
+    hintText,
+  };
+};
+
+export const formatHintMessage = (hint: HintInfo): string => {
+  if (hint.distance < 100) {
+    return `${hint.hintText}\n\n目标「${hint.targetName}」就在附近！`;
+  } else if (hint.distance < 300) {
+    return `${hint.hintText}\n\n目标「${hint.targetName}」在${hint.direction}方向，大约${hint.distance}步远~`;
+  } else {
+    return `${hint.hintText}\n\n目标「${hint.targetName}」在${hint.direction}方向，还有一段路要走呢~`;
+  }
 };

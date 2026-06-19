@@ -17,8 +17,8 @@ import {
   INITIAL_COMPANIONS,
   getCompanionVisibilityBonus,
   getCompanionDiscoveryBonus,
-  checkCompanionEncounter,
   getCompanionEncounterProgress,
+  generateHint,
 } from '../data/companions';
 
 const FOG_CELL_SIZE = 40;
@@ -185,6 +185,8 @@ export const useGameStore = create<GameState & {
   updateCompanionParticles: () => void;
   spawnCompanionParticles: (x: number, y: number, color: string) => void;
   checkCompanionProximity: () => void;
+  triggerHint: () => void;
+  dismissHint: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -225,6 +227,9 @@ export const useGameStore = create<GameState & {
   showCompanionEncounter: false,
   encounterCompanion: null,
   companionParticles: [],
+  currentHint: null,
+  showHint: false,
+  lastHintTime: 0,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -788,6 +793,9 @@ export const useGameStore = create<GameState & {
       showCompanionEncounter: false,
       encounterCompanion: null,
       companionParticles: [],
+      currentHint: null,
+      showHint: false,
+      lastHintTime: 0,
     });
   },
 
@@ -797,25 +805,6 @@ export const useGameStore = create<GameState & {
   },
 
   checkCompanionEncounters: () => {
-    const { companions, collectedFragments, explorationProgress, abilities, showCompanionEncounter } = get();
-    
-    if (showCompanionEncounter) return;
-    
-    const collectedCount = collectedFragments.length;
-
-    for (const companion of companions) {
-      if (companion.unlocked) continue;
-      
-      const shouldEncounter = checkCompanionEncounter(companion, collectedCount, explorationProgress, abilities);
-      
-      if (shouldEncounter) {
-        set({
-          showCompanionEncounter: true,
-          encounterCompanion: { ...companion },
-        });
-        break;
-      }
-    }
   },
 
   updateCompanionEncounterProgress: () => {
@@ -874,7 +863,26 @@ export const useGameStore = create<GameState & {
 
   closeCompanionPanel: () => set({ showCompanionPanel: false }),
 
-  closeCompanionEncounter: () => set({ showCompanionEncounter: false, encounterCompanion: null }),
+  closeCompanionEncounter: () => {
+    const { encounterCompanion, companions } = get();
+    if (!encounterCompanion) {
+      set({ showCompanionEncounter: false, encounterCompanion: null });
+      return;
+    }
+
+    const cooldownMs = 60000;
+    const updatedCompanions = companions.map(c => 
+      c.id === encounterCompanion.id
+        ? { ...c, encounterCooldownUntil: Date.now() + cooldownMs }
+        : c
+    );
+
+    set({ 
+      showCompanionEncounter: false, 
+      encounterCompanion: null,
+      companions: updatedCompanions,
+    });
+  },
 
   acceptCompanion: () => {
     const { encounterCompanion, butterfly } = get();
@@ -935,8 +943,11 @@ export const useGameStore = create<GameState & {
     const { butterfly, companions, showCompanionEncounter } = get();
     if (showCompanionEncounter) return;
 
+    const now = Date.now();
+
     for (const companion of companions) {
       if (companion.unlocked) continue;
+      if (companion.encounterCooldownUntil > now) continue;
       
       const dx = butterfly.x - companion.x;
       const dy = butterfly.y - companion.y;
@@ -950,5 +961,49 @@ export const useGameStore = create<GameState & {
         break;
       }
     }
+  },
+
+  triggerHint: () => {
+    const { butterfly, fragments, flowers, hiddenAreas, companions, activeCompanionId, lastHintTime } = get();
+    
+    const activeCompanion = companions.find(c => c.id === activeCompanionId);
+    if (!activeCompanion || activeCompanion.ability !== 'hint') {
+      return;
+    }
+
+    const now = Date.now();
+    const hintInterval = 8000;
+    if (now - lastHintTime < hintInterval) {
+      return;
+    }
+
+    const hint = generateHint(
+      butterfly.x,
+      butterfly.y,
+      fragments,
+      flowers,
+      hiddenAreas,
+      companions
+    );
+
+    if (hint) {
+      set({
+        currentHint: hint,
+        showHint: true,
+        lastHintTime: now,
+      });
+
+      const displayDuration = 6000;
+      setTimeout(() => {
+        const { currentHint: latestHint, lastHintTime: latestHintTime } = get();
+        if (latestHint && latestHint.targetId === hint.targetId && now >= latestHintTime - 1000) {
+          set({ showHint: false });
+        }
+      }, displayDuration);
+    }
+  },
+
+  dismissHint: () => {
+    set({ showHint: false });
   },
 }));

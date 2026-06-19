@@ -130,6 +130,17 @@ export type CompanionAbility = 'light' | 'discover' | 'hint';
 
 export type CompanionPersonality = 'curious' | 'calm' | 'playful' | 'wise' | 'shy';
 
+export type HintType = 'fragment' | 'flower' | 'hidden' | 'companion';
+
+export interface HintInfo {
+  type: HintType;
+  targetId: string;
+  targetName: string;
+  direction: string;
+  distance: number;
+  hintText: string;
+}
+
 export interface ButterflyCompanion {
   id: string;
   name: string;
@@ -147,6 +158,7 @@ export interface ButterflyCompanion {
   encounterTarget: number;
   abilityPower: number;
   quote: string;
+  encounterCooldownUntil: number;
 }
 
 export interface CompanionState {
@@ -156,6 +168,9 @@ export interface CompanionState {
   showCompanionEncounter: boolean;
   encounterCompanion: ButterflyCompanion | null;
   companionParticles: Particle[];
+  currentHint: HintInfo | null;
+  showHint: boolean;
+  lastHintTime: number;
 }
 
 export interface GameState extends CompanionState {

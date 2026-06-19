@@ -7,6 +7,7 @@ import { FlowerCard } from '../components/FlowerCard';
 import { AbilityUnlockModal } from '../components/AbilityUnlockModal';
 import { CompanionEncounter } from '../components/CompanionEncounter';
 import { CompanionPanel } from '../components/CompanionPanel';
+import { HintBubble } from '../components/HintBubble';
 
 export const Game = () => {
   return (
@@ -20,6 +21,7 @@ export const Game = () => {
       <AbilityUnlockModal />
       <CompanionEncounter />
       <CompanionPanel />
+      <HintBubble />
     </div>
   );
 };

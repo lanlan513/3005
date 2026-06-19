@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { BookOpen, Sparkles, Flower2, Zap, Wind } from 'lucide-react';
 import { FLOWER_DATA } from '../data/flowers';
@@ -20,6 +21,8 @@ export const HUD = () => {
     companions,
     activeCompanionId,
     openCompanionPanel,
+    triggerHint,
+    lastHintTime,
   } = useGameStore();
 
   const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
@@ -36,6 +39,18 @@ export const HUD = () => {
   const visibilityAbility = abilities.find(a => a.id === 'visibility');
   const dashAbility = abilities.find(a => a.id === 'dash');
   const glideAbility = abilities.find(a => a.id === 'glide');
+
+  const isHintCompanion = activeCompanion?.ability === 'hint';
+  const hintCooldownMs = 8000;
+  
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  const hintCooldownRemaining = Math.max(0, hintCooldownMs - (Date.now() - lastHintTime));
+  const canHint = isHintCompanion && hintCooldownRemaining === 0;
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
@@ -229,7 +244,7 @@ export const HUD = () => {
               borderColor: activeCompanion.color + '66',
             }}
           >
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">🦋</span>
               <span
                 className="font-bold text-sm"
@@ -239,10 +254,35 @@ export const HUD = () => {
               </span>
               <span className="text-xs">携带中</span>
             </div>
-            <div className="flex items-center gap-1 text-xs text-white/80">
+            <div className="flex items-center gap-1 text-xs text-white/80 mb-2">
               <span>{abilityIcon[activeCompanion.ability]}</span>
               <span>+{Math.round(activeCompanion.abilityPower * 100)}%</span>
             </div>
+            
+            {isHintCompanion && (
+              <button
+                onClick={triggerHint}
+                disabled={!canHint}
+                className={`w-full mt-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all duration-200 ${
+                  canHint
+                    ? 'text-white hover:opacity-90 active:scale-95'
+                    : 'bg-gray-400/50 text-white/60 cursor-not-allowed'
+                }`}
+                style={{
+                  backgroundColor: canHint ? activeCompanion.color : undefined,
+                }}
+              >
+                {canHint ? (
+                  <span className="flex items-center justify-center gap-1">
+                    💡 请求提示 (H键)
+                  </span>
+                ) : (
+                  <span>
+                    冷却中 {Math.ceil(hintCooldownRemaining / 1000)}s
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -250,7 +290,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 键伙伴面板 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 键伙伴面板 · H 键请求提示 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
           </p>
         </div>
       </div>

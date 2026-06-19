@@ -104,6 +104,7 @@ export const GameCanvas = () => {
     checkCompanionProximity,
     updateCompanionParticles,
     openCompanionPanel,
+    triggerHint,
   } = useGameStore();
 
   useEffect(() => {
@@ -123,6 +124,11 @@ export const GameCanvas = () => {
       if (key === 'b' && !e.repeat) {
         e.preventDefault();
         openCompanionPanel();
+      }
+      
+      if (key === 'h' && !e.repeat) {
+        e.preventDefault();
+        triggerHint();
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -272,6 +278,9 @@ export const GameCanvas = () => {
     checkCompanionEncounters();
     checkCompanionProximity();
     updateCompanionParticles();
+    if (Math.random() < 0.008) {
+      triggerHint();
+    }
     updateParticles();
     updatePetals();
     updateFireflies();
