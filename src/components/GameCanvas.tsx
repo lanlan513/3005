@@ -2117,6 +2117,7 @@ export const GameCanvas = () => {
   };
 
   const drawEchoPuzzles = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    const now = Date.now() / 1000;
     for (const puzzle of echoPuzzles) {
       const px = puzzle.x + ox;
       const py = puzzle.y + oy;
@@ -2124,6 +2125,13 @@ export const GameCanvas = () => {
 
       const pulse = (Math.sin(puzzle.pulsePhase) + 1) / 2;
       const time = timeRef.current;
+
+      const timeDiff = Math.abs(puzzle.phantomLastInZoneTime - puzzle.butterflyLastInZoneTime);
+      const inTimeWindow = timeDiff <= puzzle.timeWindowSeconds &&
+                          puzzle.phantomLastInZoneTime > 0 &&
+                          puzzle.butterflyLastInZoneTime > 0 &&
+                          !puzzle.activated;
+      const windowPulse = inTimeWindow ? (Math.sin(time * 8) + 1) / 2 : 0;
 
       ctx.save();
 
@@ -2164,7 +2172,7 @@ export const GameCanvas = () => {
 
         if (puzzle.activateProgress > 0) {
           const progressAngle = puzzle.activateProgress * Math.PI * 2;
-          ctx.strokeStyle = '#CE93D8';
+          ctx.strokeStyle = inTimeWindow ? '#FFD700' : '#CE93D8';
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(px, py, puzzle.size + 6, -Math.PI / 2, -Math.PI / 2 + progressAngle);
@@ -2176,50 +2184,85 @@ export const GameCanvas = () => {
         const butterflyZoneX = puzzle.butterflyZoneX + ox;
         const butterflyZoneY = puzzle.butterflyZoneY + oy;
 
-        const phantomAlpha = 0.1 + pulse * 0.08;
-        ctx.fillStyle = `rgba(155, 126, 220, ${phantomAlpha})`;
+        const phantomRecentlyInZone = now - puzzle.phantomLastInZoneTime <= puzzle.timeWindowSeconds && puzzle.phantomLastInZoneTime > 0;
+        const butterflyRecentlyInZone = now - puzzle.butterflyLastInZoneTime <= puzzle.timeWindowSeconds && puzzle.butterflyLastInZoneTime > 0;
+
+        const phantomAlpha = phantomRecentlyInZone ? (0.25 + pulse * 0.15) : (0.1 + pulse * 0.08);
+        const phantomColor = phantomRecentlyInZone ? '95, 153, 255' : '155, 126, 220';
+        ctx.fillStyle = `rgba(${phantomColor}, ${phantomAlpha})`;
         ctx.beginPath();
         ctx.arc(phantomZoneX, phantomZoneY, puzzle.phantomZoneRadius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = `rgba(155, 126, 220, ${phantomAlpha * 2})`;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = `rgba(${phantomColor}, ${phantomAlpha * 2})`;
+        ctx.lineWidth = phantomRecentlyInZone ? 2.5 : 1.5;
+        ctx.setLineDash(phantomRecentlyInZone ? [] : [4, 4]);
         ctx.lineDashOffset = -time * 8;
         ctx.beginPath();
         ctx.arc(phantomZoneX, phantomZoneY, puzzle.phantomZoneRadius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = 'rgba(206, 147, 216, 0.5)';
-        ctx.font = '10px sans-serif';
+        ctx.fillStyle = phantomRecentlyInZone ? 'rgba(95, 153, 255, 0.8)' : 'rgba(206, 147, 216, 0.5)';
+        ctx.font = phantomRecentlyInZone ? 'bold 11px sans-serif' : '10px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('幻影区', phantomZoneX, phantomZoneY + 3);
 
-        const butterflyAlpha = 0.1 + pulse * 0.08;
-        ctx.fillStyle = `rgba(206, 147, 216, ${butterflyAlpha})`;
+        const butterflyAlpha = butterflyRecentlyInZone ? (0.25 + pulse * 0.15) : (0.1 + pulse * 0.08);
+        const butterflyColor = butterflyRecentlyInZone ? '95, 153, 255' : '206, 147, 216';
+        ctx.fillStyle = `rgba(${butterflyColor}, ${butterflyAlpha})`;
         ctx.beginPath();
         ctx.arc(butterflyZoneX, butterflyZoneY, puzzle.butterflyZoneRadius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = `rgba(206, 147, 216, ${butterflyAlpha * 2})`;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = `rgba(${butterflyColor}, ${butterflyAlpha * 2})`;
+        ctx.lineWidth = butterflyRecentlyInZone ? 2.5 : 1.5;
+        ctx.setLineDash(butterflyRecentlyInZone ? [] : [4, 4]);
         ctx.lineDashOffset = time * 8;
         ctx.beginPath();
         ctx.arc(butterflyZoneX, butterflyZoneY, puzzle.butterflyZoneRadius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = 'rgba(206, 147, 216, 0.5)';
-        ctx.font = '10px sans-serif';
+        ctx.fillStyle = butterflyRecentlyInZone ? 'rgba(95, 153, 255, 0.8)' : 'rgba(206, 147, 216, 0.5)';
+        ctx.font = butterflyRecentlyInZone ? 'bold 11px sans-serif' : '10px sans-serif';
         ctx.fillText('蝴蝶区', butterflyZoneX, butterflyZoneY + 3);
 
-        ctx.strokeStyle = 'rgba(155, 126, 220, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(phantomZoneX, phantomZoneY);
-        ctx.lineTo(px, py);
-        ctx.lineTo(butterflyZoneX, butterflyZoneY);
-        ctx.stroke();
+        if (inTimeWindow) {
+          const connectionAlpha = 0.3 + windowPulse * 0.5;
+          ctx.strokeStyle = `rgba(255, 215, 0, ${connectionAlpha})`;
+          ctx.lineWidth = 2 + windowPulse * 2;
+          ctx.beginPath();
+          ctx.moveTo(phantomZoneX, phantomZoneY);
+          ctx.lineTo(px, py);
+          ctx.lineTo(butterflyZoneX, butterflyZoneY);
+          ctx.stroke();
+
+          for (let i = 0; i < 3; i++) {
+            const t = ((time * 0.5 + i * 0.33) % 1);
+            const midX = phantomZoneX + (butterflyZoneX - phantomZoneX) * t;
+            const midY = phantomZoneY + (butterflyZoneY - phantomZoneY) * t;
+            const passX = midX + (px - midX) * 0.5;
+            const passY = midY + (py - midY) * 0.5;
+            ctx.fillStyle = `rgba(255, 215, 0, ${connectionAlpha * 0.8})`;
+            ctx.beginPath();
+            ctx.arc(passX, passY, 3 + windowPulse * 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          ctx.strokeStyle = 'rgba(155, 126, 220, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(phantomZoneX, phantomZoneY);
+          ctx.lineTo(px, py);
+          ctx.lineTo(butterflyZoneX, butterflyZoneY);
+          ctx.stroke();
+        }
+
+        if (inTimeWindow) {
+          ctx.fillStyle = '#FFD700';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('✦ 时间窗口激活 ✦', px, py - puzzle.size - 15);
+        }
       }
 
       const typeLabelMap: Record<string, string> = { memory: '记忆', resonance: '共振', mirror: '镜像' };

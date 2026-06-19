@@ -342,6 +342,9 @@ export interface EchoPuzzle {
   targetId: string;
   pulsePhase: number;
   hint: string;
+  phantomLastInZoneTime: number;
+  butterflyLastInZoneTime: number;
+  timeWindowSeconds: number;
 }
 
 export interface MemoryEchoState {

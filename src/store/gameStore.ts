@@ -48,10 +48,12 @@ const MAX_GLIDE_ENERGY = 100;
 const GLIDE_ENERGY_REGEN = 0.5;
 const GLIDE_ENERGY_DRAIN = 0.8;
 const PHANTOM_RECORD_INTERVAL = 3;
-const PHANTOM_MAX_SNAPSHOTS = 300;
+const PHANTOM_MAX_SNAPSHOTS = 400;
 const PHANTOM_PLAYBACK_SPEED = 1;
-const ECHO_ACTIVATE_RATE = 0.012;
-const ECHO_DECAY_RATE = 0.015;
+const PHANTOM_AUTO_SAVE_THRESHOLD = 30;
+const ECHO_ACTIVATE_RATE = 0.02;
+const ECHO_DECAY_RATE = 0.008;
+const ECHO_TIME_WINDOW = 4.0;
 
 const createInitialButterfly = (): Butterfly => ({
   x: START_REGION.x + START_REGION.width / 2,
@@ -292,7 +294,7 @@ export const useGameStore = create<GameState & {
   activeLightId: null,
   showLightPuzzleHint: false,
   phantomTrails: [],
-  echoPuzzles: INITIAL_ECHO_PUZZLES.map(p => ({ ...p, pulsePhase: Math.random() * Math.PI * 2 })),
+  echoPuzzles: INITIAL_ECHO_PUZZLES.map(p => ({ ...p, pulsePhase: Math.random() * Math.PI * 2, phantomLastInZoneTime: -999, butterflyLastInZoneTime: -999 })),
   isRecording: true,
   currentRecordingSnapshots: [],
   currentRecordingRegionId: null,
@@ -885,7 +887,7 @@ export const useGameStore = create<GameState & {
       activeLightId: null,
       showLightPuzzleHint: false,
       phantomTrails: [],
-      echoPuzzles: INITIAL_ECHO_PUZZLES.map(m => ({ ...m, pulsePhase: Math.random() * Math.PI * 2 })),
+      echoPuzzles: INITIAL_ECHO_PUZZLES.map(m => ({ ...m, pulsePhase: Math.random() * Math.PI * 2, phantomLastInZoneTime: -999, butterflyLastInZoneTime: -999 })),
       isRecording: true,
       currentRecordingSnapshots: [],
       currentRecordingRegionId: null,
@@ -1576,7 +1578,7 @@ export const useGameStore = create<GameState & {
   },
 
   recordPhantomSnapshot: () => {
-    const { butterfly, isRecording, currentRecordingSnapshots, currentRecordingRegionId, recordingFrameCounter, phantomTrails, dreamRegions } = get();
+    const { butterfly, isRecording, currentRecordingSnapshots, currentRecordingRegionId, recordingFrameCounter, phantomTrails } = get();
     if (!isRecording) return;
 
     const regionId = get().findRegionAtPosition(butterfly.x, butterfly.y);
@@ -1631,6 +1633,37 @@ export const useGameStore = create<GameState & {
       newSnapshots = newSnapshots.slice(newSnapshots.length - PHANTOM_MAX_SNAPSHOTS);
     }
 
+    if (newSnapshots.length >= PHANTOM_AUTO_SAVE_THRESHOLD &&
+        newSnapshots.length % PHANTOM_AUTO_SAVE_THRESHOLD === 0) {
+      const existingTrail = phantomTrails.find(t => t.regionId === regionId);
+      const isFirstSave = !existingTrail;
+      if (!existingTrail || newSnapshots.length > existingTrail.snapshots.length) {
+        const newTrail: PhantomTrail = {
+          id: `trail-${regionId}-${Date.now()}`,
+          snapshots: [...newSnapshots],
+          regionId,
+          createdAt: Date.now(),
+          playCount: existingTrail?.playCount || 0,
+          activeSnapshotIndex: 0,
+          isPlaying: true,
+          fadePhase: 0,
+        };
+        const updatedTrails = existingTrail
+          ? phantomTrails.map(t => t.id === existingTrail.id ? newTrail : t)
+          : [...phantomTrails, newTrail];
+        set({ phantomTrails: updatedTrails });
+        if (isFirstSave) {
+          set({ showEchoHint: true, echoHintText: '记忆轨迹已记录！你的幻影将重复你的行动，尝试与过去的自己合作解谜' });
+          setTimeout(() => {
+            const state = get();
+            if (state.echoHintText === '记忆轨迹已记录！你的幻影将重复你的行动，尝试与过去的自己合作解谜') {
+              set({ showEchoHint: false, echoHintText: null });
+            }
+          }, 5000);
+        }
+      }
+    }
+
     set({
       currentRecordingSnapshots: newSnapshots,
       currentRecordingRegionId: regionId,
@@ -1667,7 +1700,17 @@ export const useGameStore = create<GameState & {
         return { ...trail, activeSnapshotIndex: newIndex, fadePhase: Math.min(1, trail.fadePhase + 0.03) };
       }
 
-      if (trail.fadePhase > 0) {
+      if (inRegion && trail.snapshots.length > 5 && trail.fadePhase > 0 && !trail.isPlaying) {
+        needsUpdate = true;
+        return { ...trail, isPlaying: true, activeSnapshotIndex: 0, fadePhase: 0 };
+      }
+
+      if (!inRegion && trail.isPlaying) {
+        needsUpdate = true;
+        return { ...trail, isPlaying: false, fadePhase: Math.min(1, trail.fadePhase + 0.05) };
+      }
+
+      if (trail.fadePhase > 0 && !trail.isPlaying) {
         needsUpdate = true;
         return { ...trail, fadePhase: Math.max(0, trail.fadePhase - 0.02) };
       }
@@ -1694,27 +1737,43 @@ export const useGameStore = create<GameState & {
 
   checkEchoPuzzles: () => {
     const { echoPuzzles, phantomTrails, butterfly, hiddenPaths } = get();
+    const now = Date.now() / 1000;
 
     const updatedPuzzles = echoPuzzles.map(puzzle => {
       if (puzzle.activated) return puzzle;
 
+      let newPhantomTime = puzzle.phantomLastInZoneTime;
+      let newButterflyTime = puzzle.butterflyLastInZoneTime;
+      let fieldsChanged = false;
+
       const requiredTrail = phantomTrails.find(t => t.regionId === puzzle.requiredTrailRegionId && t.isPlaying);
-      if (!requiredTrail) return { ...puzzle, activateProgress: Math.max(0, puzzle.activateProgress - ECHO_DECAY_RATE) };
-
-      const currentSnapshot = requiredTrail.snapshots[Math.floor(requiredTrail.activeSnapshotIndex)];
-      if (!currentSnapshot) return { ...puzzle, activateProgress: Math.max(0, puzzle.activateProgress - ECHO_DECAY_RATE) };
-
-      const phantomDx = currentSnapshot.x - puzzle.phantomZoneX;
-      const phantomDy = currentSnapshot.y - puzzle.phantomZoneY;
-      const phantomDist = Math.sqrt(phantomDx * phantomDx + phantomDy * phantomDy);
-      const phantomInZone = phantomDist < puzzle.phantomZoneRadius;
+      if (requiredTrail) {
+        const currentSnapshot = requiredTrail.snapshots[Math.floor(requiredTrail.activeSnapshotIndex)];
+        if (currentSnapshot) {
+          const phantomDx = currentSnapshot.x - puzzle.phantomZoneX;
+          const phantomDy = currentSnapshot.y - puzzle.phantomZoneY;
+          const phantomDist = Math.sqrt(phantomDx * phantomDx + phantomDy * phantomDy);
+          if (phantomDist < puzzle.phantomZoneRadius) {
+            newPhantomTime = now;
+            fieldsChanged = true;
+          }
+        }
+      }
 
       const butterflyDx = butterfly.x - puzzle.butterflyZoneX;
       const butterflyDy = butterfly.y - puzzle.butterflyZoneY;
       const butterflyDist = Math.sqrt(butterflyDx * butterflyDx + butterflyDy * butterflyDy);
-      const butterflyInZone = butterflyDist < puzzle.butterflyZoneRadius;
+      if (butterflyDist < puzzle.butterflyZoneRadius) {
+        newButterflyTime = now;
+        fieldsChanged = true;
+      }
 
-      if (phantomInZone && butterflyInZone) {
+      const timeDiff = Math.abs(newPhantomTime - newButterflyTime);
+      const bothInWindow = timeDiff <= puzzle.timeWindowSeconds &&
+                           newPhantomTime > 0 &&
+                           newButterflyTime > 0;
+
+      if (bothInWindow) {
         const newProgress = Math.min(1, puzzle.activateProgress + ECHO_ACTIVATE_RATE);
         const isActivated = newProgress >= 1;
 
@@ -1739,10 +1798,26 @@ export const useGameStore = create<GameState & {
           set({ showEchoHint: true, echoHintText: isActivated ? '记忆回响已激活！' : puzzle.hint });
         }
 
-        return { ...puzzle, activateProgress: newProgress, activated: isActivated };
+        return {
+          ...puzzle,
+          activateProgress: newProgress,
+          activated: isActivated,
+          phantomLastInZoneTime: newPhantomTime,
+          butterflyLastInZoneTime: newButterflyTime,
+        };
       }
 
-      return { ...puzzle, activateProgress: Math.max(0, puzzle.activateProgress - ECHO_DECAY_RATE) };
+      const decayedProgress = Math.max(0, puzzle.activateProgress - ECHO_DECAY_RATE);
+      if (fieldsChanged || decayedProgress !== puzzle.activateProgress) {
+        return {
+          ...puzzle,
+          activateProgress: decayedProgress,
+          phantomLastInZoneTime: newPhantomTime,
+          butterflyLastInZoneTime: newButterflyTime,
+        };
+      }
+
+      return puzzle;
     });
 
     set({ echoPuzzles: updatedPuzzles });
