@@ -603,7 +603,10 @@ export const useGameStore = create<GameState & {
   },
 
   updateAbilityLevels: () => {
-    const { collectedFragments, explorationProgress, abilities } = get();
+    const { collectedFragments, explorationProgress, abilities, showAbilityUnlock } = get();
+    
+    if (showAbilityUnlock) return;
+    
     const collectedCount = collectedFragments.length;
 
     const speedLevel = getSpeedLevelByFragments(collectedCount);
@@ -613,12 +616,18 @@ export const useGameStore = create<GameState & {
 
     const newAbilityLevel = getAbilityLevelStats(speedLevel, visibilityLevel, dashLevel, glideLevel);
     
+    let levelUpAbility: ButterflyAbility | null = null;
+    
     const updatedAbilities = abilities.map(ability => {
       let newLevel = ability.level;
       if (ability.id === 'speed') newLevel = speedLevel;
       if (ability.id === 'visibility') newLevel = visibilityLevel;
       if (ability.id === 'dash') newLevel = dashLevel;
       if (ability.id === 'glide') newLevel = glideLevel;
+      
+      if (newLevel > ability.level && !levelUpAbility) {
+        levelUpAbility = { ...ability, level: newLevel };
+      }
       
       return { ...ability, level: newLevel };
     });
@@ -627,6 +636,13 @@ export const useGameStore = create<GameState & {
       abilityLevel: newAbilityLevel,
       abilities: updatedAbilities,
     });
+    
+    if (levelUpAbility) {
+      set({
+        showAbilityUnlock: true,
+        unlockAbility: levelUpAbility,
+      });
+    }
   },
 
   checkAbilityUnlocks: () => {
@@ -667,6 +683,23 @@ export const useGameStore = create<GameState & {
 
       const ability = abilities.find(a => a.id === area.requiredAbility);
       if (!ability || !ability.unlocked) return area;
+
+      let abilityActive = false;
+      switch (area.requiredAbility) {
+        case 'dash':
+          abilityActive = butterfly.isDashing;
+          break;
+        case 'glide':
+          abilityActive = butterfly.isGliding;
+          break;
+        case 'visibility':
+          abilityActive = ability.level >= 2;
+          break;
+        default:
+          abilityActive = true;
+      }
+
+      if (!abilityActive) return area;
 
       const centerX = area.x + area.width / 2;
       const centerY = area.y + area.height / 2;
