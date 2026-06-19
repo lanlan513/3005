@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion, DynamicParticle } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion, DynamicParticle, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
 import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
@@ -28,6 +28,14 @@ import {
   calculateMapBounds,
   START_REGION,
 } from '../data/dreamRegions';
+import {
+  INITIAL_LIGHT_SOURCES,
+  INITIAL_GIANT_FLOWERS,
+  INITIAL_HIDDEN_PATHS,
+  INITIAL_MEMORY_TEXTS,
+  INITIAL_LIGHT_MECHANISMS,
+  LIGHT_COLOR_MAP,
+} from '../data/lightPuzzle';
 
 const FOG_CELL_SIZE = 40;
 const BASE_VISIBILITY_RADIUS = 120;
@@ -203,6 +211,13 @@ export const useGameStore = create<GameState & {
   clampButterflyToBounds: () => void;
   updateRegionAnimation: () => void;
   isInUnlockedRegion: (x: number, y: number) => boolean;
+  updateLightSources: () => void;
+  updateGiantFlowers: () => void;
+  updateLightPuzzleLogic: () => void;
+  setActiveLight: (lightId: string | null) => void;
+  rotateLight: (delta: number) => void;
+  interactWithLight: (lightId: string) => void;
+  checkLightBeamHits: () => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -252,6 +267,13 @@ export const useGameStore = create<GameState & {
   showRegionUnlock: false,
   unlockRegion: null,
   mapBounds: getInitialMapBounds(),
+  lightSources: INITIAL_LIGHT_SOURCES.map(l => ({ ...l })),
+  giantFlowers: INITIAL_GIANT_FLOWERS.map(f => ({ ...f, swayPhase: Math.random() * Math.PI * 2, bloomPhase: 0 })),
+  hiddenPaths: INITIAL_HIDDEN_PATHS.map(p => ({ ...p, points: p.points.map(pt => ({ ...pt })) })),
+  memoryTexts: INITIAL_MEMORY_TEXTS.map(t => ({ ...t })),
+  lightMechanisms: INITIAL_LIGHT_MECHANISMS.map(m => ({ ...m, pulsePhase: Math.random() * Math.PI * 2 })),
+  activeLightId: null,
+  showLightPuzzleHint: false,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -829,6 +851,13 @@ export const useGameStore = create<GameState & {
       showRegionUnlock: false,
       unlockRegion: null,
       mapBounds: getInitialMapBounds(),
+      lightSources: INITIAL_LIGHT_SOURCES.map(l => ({ ...l })),
+      giantFlowers: INITIAL_GIANT_FLOWERS.map(f => ({ ...f, swayPhase: Math.random() * Math.PI * 2, bloomPhase: 0 })),
+      hiddenPaths: INITIAL_HIDDEN_PATHS.map(p => ({ ...p, points: p.points.map(pt => ({ ...pt })) })),
+      memoryTexts: INITIAL_MEMORY_TEXTS.map(t => ({ ...t })),
+      lightMechanisms: INITIAL_LIGHT_MECHANISMS.map(m => ({ ...m, pulsePhase: Math.random() * Math.PI * 2 })),
+      activeLightId: null,
+      showLightPuzzleHint: false,
     });
   },
 
@@ -1239,4 +1268,209 @@ export const useGameStore = create<GameState & {
 
     set({ dynamicParticles: updatedParticles });
   },
+
+  updateLightSources: () => {
+    const { lightSources } = get();
+    set({
+      lightSources: lightSources.map(l => {
+        let newX = l.x;
+        let newY = l.y;
+        let newPhase = l.movePhase + l.moveSpeed;
+
+        if (l.movingPattern === 'circular') {
+          newX = l.originX + Math.cos(newPhase) * l.moveRadius;
+          newY = l.originY + Math.sin(newPhase) * l.moveRadius;
+        } else if (l.movingPattern === 'linear') {
+          newX = l.originX + Math.sin(newPhase) * l.moveRadius;
+          newY = l.originY;
+        }
+
+        return {
+          ...l,
+          x: newX,
+          y: newY,
+          movePhase: newPhase,
+          pulsePhase: l.pulsePhase + 0.05,
+        };
+      }),
+    });
+  },
+
+  updateGiantFlowers: () => {
+    const { giantFlowers } = get();
+    set({
+      giantFlowers: giantFlowers.map(f => ({
+        ...f,
+        swayPhase: f.swayPhase + 0.02,
+        bloomPhase: f.lit ? Math.min(1, f.bloomPhase + 0.01) : Math.max(0, f.bloomPhase - 0.005),
+        litIntensity: f.lit ? Math.min(1, f.litIntensity + 0.05) : Math.max(0, f.litIntensity - 0.03),
+      })),
+    });
+  },
+
+  updateLightPuzzleLogic: () => {
+    get().checkLightBeamHits();
+
+    const { hiddenPaths, memoryTexts, lightMechanisms, giantFlowers } = get();
+
+    const updatedPaths = hiddenPaths.map(p => {
+      if (p.revealed) return p;
+      return { ...p, revealProgress: Math.max(0, p.revealProgress - 0.005) };
+    });
+
+    const updatedTexts = memoryTexts.map(t => {
+      if (t.revealed) return t;
+      return { ...t, revealProgress: Math.max(0, t.revealProgress - 0.003) };
+    });
+
+    const updatedMechanisms = lightMechanisms.map(m => ({
+      ...m,
+      pulsePhase: m.pulsePhase + 0.04,
+      activateProgress: m.activated ? Math.min(1, m.activateProgress + 0.02) : Math.max(0, m.activateProgress - 0.01),
+    }));
+
+    const updatedFlowers = giantFlowers.map(f => ({
+      ...f,
+      lit: false,
+    }));
+
+    set({
+      hiddenPaths: updatedPaths,
+      memoryTexts: updatedTexts,
+      lightMechanisms: updatedMechanisms,
+      giantFlowers: updatedFlowers,
+    });
+
+    get().checkLightBeamHits();
+  },
+
+  setActiveLight: (lightId) => {
+    set({ activeLightId: lightId, showLightPuzzleHint: lightId !== null });
+  },
+
+  rotateLight: (delta) => {
+    const { lightSources, activeLightId } = get();
+    if (!activeLightId) return;
+
+    set({
+      lightSources: lightSources.map(l =>
+        l.id === activeLightId ? { ...l, angle: l.angle + delta } : l
+      ),
+    });
+  },
+
+  interactWithLight: (lightId) => {
+    const { lightSources, butterfly, activeLightId } = get();
+    const light = lightSources.find(l => l.id === lightId);
+    if (!light) return;
+
+    const dx = butterfly.x - light.x;
+    const dy = butterfly.y - light.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 120) {
+      if (activeLightId === lightId) {
+        set({ activeLightId: null, showLightPuzzleHint: false });
+      } else {
+        set({ activeLightId: lightId, showLightPuzzleHint: true });
+      }
+    }
+  },
+
+  checkLightBeamHits: () => {
+    const { lightSources, giantFlowers, hiddenPaths, memoryTexts, lightMechanisms } = get();
+
+    const updatedFlowers = [...giantFlowers];
+    const updatedPaths = hiddenPaths.map(p => ({ ...p }));
+    const updatedTexts = memoryTexts.map(t => ({ ...t }));
+    const updatedMechanisms = lightMechanisms.map(m => ({ ...m }));
+
+    for (const light of lightSources) {
+      if (!light.active) continue;
+
+      const endX = light.x + Math.cos(light.angle) * light.beamLength;
+      const endY = light.y + Math.sin(light.angle) * light.beamLength;
+
+      for (let i = 0; i < updatedFlowers.length; i++) {
+        const flower = updatedFlowers[i];
+        const distToBeam = pointToLineDistance(flower.x, flower.y, light.x, light.y, endX, endY);
+        if (distToBeam < flower.size * 0.8 && light.color === flower.reflectColor) {
+          updatedFlowers[i] = { ...flower, lit: true, litIntensity: Math.min(1, flower.litIntensity + 0.1) };
+        }
+      }
+
+      for (let i = 0; i < updatedPaths.length; i++) {
+        const path = updatedPaths[i];
+        if (path.revealed) continue;
+        if (path.requiredColor !== light.color) continue;
+
+        let anyLit = false;
+        for (const pt of path.points) {
+          const distToBeam = pointToLineDistance(pt.x, pt.y, light.x, light.y, endX, endY);
+          if (distToBeam < light.beamWidth + path.width) {
+            anyLit = true;
+            break;
+          }
+        }
+        if (anyLit) {
+          const newProgress = Math.min(1, path.revealProgress + 0.02);
+          updatedPaths[i] = { ...path, revealProgress: newProgress, revealed: newProgress >= 1 };
+        }
+      }
+
+      for (let i = 0; i < updatedTexts.length; i++) {
+        const text = updatedTexts[i];
+        if (text.revealed) continue;
+        if (text.requiredColor !== light.color) continue;
+
+        const distToBeam = pointToLineDistance(text.x, text.y, light.x, light.y, endX, endY);
+        if (distToBeam < light.beamWidth + 30) {
+          const newProgress = Math.min(1, text.revealProgress + 0.015);
+          updatedTexts[i] = { ...text, revealProgress: newProgress, revealed: newProgress >= 1 };
+        }
+      }
+
+      for (let i = 0; i < updatedMechanisms.length; i++) {
+        const mech = updatedMechanisms[i];
+        if (mech.activated) continue;
+        if (mech.requiredColor !== light.color) continue;
+
+        const distToBeam = pointToLineDistance(mech.x, mech.y, light.x, light.y, endX, endY);
+        if (distToBeam < light.beamWidth + mech.size) {
+          const newProgress = Math.min(1, mech.activateProgress + 0.01);
+          const isActivated = newProgress >= 1;
+          updatedMechanisms[i] = { ...mech, activateProgress: newProgress, activated: isActivated };
+
+          if (isActivated) {
+            const targetPath = updatedPaths.find(p => p.id === mech.targetId);
+            if (targetPath && !targetPath.revealed) {
+              const pathIdx = updatedPaths.findIndex(p => p.id === mech.targetId);
+              updatedPaths[pathIdx] = { ...targetPath, revealed: true, revealProgress: 1 };
+            }
+          }
+        }
+      }
+    }
+
+    set({
+      giantFlowers: updatedFlowers,
+      hiddenPaths: updatedPaths,
+      memoryTexts: updatedTexts,
+      lightMechanisms: updatedMechanisms,
+    });
+  },
 }));
+
+function pointToLineDistance(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+  return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+}

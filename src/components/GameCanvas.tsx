@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree, ButterflyCompanion, DreamRegion } from '../types/game';
+import { Flower, Tree, ButterflyCompanion, DreamRegion, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism } from '../types/game';
 import { BASE_ACCEL, FRAGMENT_RESPAWN_INTERVAL } from '../store/gameStore';
+import { LIGHT_COLOR_MAP } from '../data/lightPuzzle';
 
 const DECORATIVE_FLOWER_COUNT = 80;
 const TREE_COUNT = 18;
@@ -113,6 +114,19 @@ export const GameCanvas = () => {
     spawnDynamicParticles,
     updateDynamicParticles,
     updateRegionAnimation,
+    lightSources,
+    giantFlowers,
+    hiddenPaths,
+    memoryTexts,
+    lightMechanisms,
+    activeLightId,
+    showLightPuzzleHint,
+    updateLightSources,
+    updateGiantFlowers,
+    updateLightPuzzleLogic,
+    setActiveLight,
+    rotateLight,
+    interactWithLight,
   } = useGameStore();
 
   useEffect(() => {
@@ -137,6 +151,20 @@ export const GameCanvas = () => {
       if (key === 'h' && !e.repeat) {
         e.preventDefault();
         triggerHint();
+      }
+
+      if (key === 'q') {
+        rotateLight(-0.08);
+      }
+      if (key === 'e') {
+        rotateLight(0.08);
+      }
+      if (key === 'l' && !e.repeat) {
+        e.preventDefault();
+        const nearest = findNearestLight();
+        if (nearest) {
+          interactWithLight(nearest.id);
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -268,6 +296,18 @@ export const GameCanvas = () => {
     return () => clearInterval(interval);
   }, [isPlaying, spawnRandomFragments]);
 
+  const findNearestLight = (): LightSource | null => {
+    const nearest = lightSources
+      .filter(l => l.playerControlled)
+      .map(l => ({
+        light: l,
+        dist: Math.sqrt((butterfly.x - l.x) ** 2 + (butterfly.y - l.y) ** 2),
+      }))
+      .filter(item => item.dist < 120)
+      .sort((a, b) => a.dist - b.dist);
+    return nearest.length > 0 ? nearest[0].light : null;
+  };
+
   const gameLoop = () => {
     if (!isPlaying) return;
     timeRef.current += 0.016;
@@ -290,6 +330,9 @@ export const GameCanvas = () => {
     spawnDynamicParticles();
     updateDynamicParticles();
     updateRegionAnimation();
+    updateLightSources();
+    updateGiantFlowers();
+    updateLightPuzzleLogic();
     if (Math.random() < 0.008) {
       triggerHint();
     }
@@ -336,8 +379,14 @@ export const GameCanvas = () => {
     drawPath(ctx, offsetX, offsetY);
     drawDreamDecorations(ctx, offsetX, offsetY);
     drawHiddenAreas(ctx, offsetX, offsetY);
+    drawHiddenPaths(ctx, offsetX, offsetY);
+    drawLightBeams(ctx, offsetX, offsetY);
+    drawLightMechanisms(ctx, offsetX, offsetY);
+    drawMemoryTexts(ctx, offsetX, offsetY);
     drawTrees(ctx, offsetX, offsetY);
     drawFlowers(ctx, offsetX, offsetY);
+    drawGiantFlowers(ctx, offsetX, offsetY);
+    drawLightSources(ctx, offsetX, offsetY);
     drawDynamicParticles(ctx, offsetX, offsetY);
     drawUnlockedCompanions(ctx, offsetX, offsetY);
     drawLockedCompanions(ctx, offsetX, offsetY);
@@ -1708,6 +1757,342 @@ export const GameCanvas = () => {
       ctx.arc(x - size * 0.3, y - size * 0.3, size * 0.4, 0, Math.PI * 2);
       ctx.fill();
       
+      ctx.restore();
+    }
+  };
+
+  const drawLightSources = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const light of lightSources) {
+      const x = light.x + ox;
+      const y = light.y + oy;
+      if (x < -100 || x > viewportWidth + 100 || y < -100 || y > viewportHeight + 100) continue;
+
+      const colors = LIGHT_COLOR_MAP[light.color];
+      const isActive = activeLightId === light.id;
+      const pulse = (Math.sin(light.pulsePhase) + 1) / 2;
+
+      ctx.save();
+
+      const glowSize = 30 + pulse * 15 + (isActive ? 20 : 0);
+      const glowGradient = ctx.createRadialGradient(x, y, 0, x, y, glowSize);
+      glowGradient.addColorStop(0, colors.glow + 'CC');
+      glowGradient.addColorStop(0.4, colors.beam + '66');
+      glowGradient.addColorStop(1, colors.beam + '00');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(x, y, glowSize, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isActive) {
+        ctx.strokeStyle = colors.beam + 'AA';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.lineDashOffset = -timeRef.current * 20;
+        ctx.beginPath();
+        ctx.arc(x, y, 40, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.strokeStyle = colors.beam + '88';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 50 + pulse * 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = colors.beam;
+      ctx.beginPath();
+      ctx.arc(x, y, 8 + pulse * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(x - 2, y - 2, 3 + pulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      const dx = butterfly.x - light.x;
+      const dy = butterfly.y - light.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 120 && light.playerControlled) {
+        ctx.fillStyle = colors.beam + 'CC';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(isActive ? 'L 脱离' : 'L 操控光源', x, y - 50);
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawLightBeams = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const light of lightSources) {
+      if (!light.active) continue;
+
+      const x = light.x + ox;
+      const y = light.y + oy;
+      const endX = light.x + Math.cos(light.angle) * light.beamLength + ox;
+      const endY = light.y + Math.sin(light.angle) * light.beamLength + oy;
+
+      const colors = LIGHT_COLOR_MAP[light.color];
+      const pulse = (Math.sin(light.pulsePhase * 2) + 1) / 2;
+
+      ctx.save();
+
+      const gradient = ctx.createLinearGradient(x, y, endX, endY);
+      gradient.addColorStop(0, colors.beam + '88');
+      gradient.addColorStop(0.3, colors.beam + '55');
+      gradient.addColorStop(0.7, colors.beam + '33');
+      gradient.addColorStop(1, colors.beam + '00');
+
+      const halfWidth = light.beamWidth / 2 * (0.8 + pulse * 0.4);
+      const perpX = -Math.sin(light.angle) * halfWidth;
+      const perpY = Math.cos(light.angle) * halfWidth;
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(x + perpX, y + perpY);
+      ctx.lineTo(x - perpX, y - perpY);
+      ctx.lineTo(endX - perpX * 0.3, endY - perpY * 0.3);
+      ctx.lineTo(endX + perpX * 0.3, endY + perpY * 0.3);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.globalAlpha = 0.3 + pulse * 0.2;
+      const innerGradient = ctx.createLinearGradient(x, y, endX, endY);
+      innerGradient.addColorStop(0, colors.glow + 'AA');
+      innerGradient.addColorStop(0.5, colors.glow + '44');
+      innerGradient.addColorStop(1, colors.glow + '00');
+
+      const innerHalf = halfWidth * 0.4;
+      const ipx = -Math.sin(light.angle) * innerHalf;
+      const ipy = Math.cos(light.angle) * innerHalf;
+
+      ctx.fillStyle = innerGradient;
+      ctx.beginPath();
+      ctx.moveTo(x + ipx, y + ipy);
+      ctx.lineTo(x - ipx, y - ipy);
+      ctx.lineTo(endX - ipx * 0.2, endY - ipy * 0.2);
+      ctx.lineTo(endX + ipx * 0.2, endY + ipy * 0.2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+  };
+
+  const drawGiantFlowers = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const flower of giantFlowers) {
+      const x = flower.x + ox;
+      const y = flower.y + oy;
+      if (x < -150 || x > viewportWidth + 150 || y < -150 || y > viewportHeight + 150) continue;
+
+      const sway = Math.sin(flower.swayPhase) * 3;
+      const colors = LIGHT_COLOR_MAP[flower.reflectColor];
+      const time = timeRef.current;
+
+      ctx.save();
+
+      if (flower.litIntensity > 0) {
+        const glowRadius = flower.size * (1.5 + flower.litIntensity * 2);
+        const glowGradient = ctx.createRadialGradient(x + sway, y, 0, x + sway, y, glowRadius);
+        glowGradient.addColorStop(0, colors.beam + Math.floor(flower.litIntensity * 150).toString(16).padStart(2, '0'));
+        glowGradient.addColorStop(0.5, colors.beam + Math.floor(flower.litIntensity * 60).toString(16).padStart(2, '0'));
+        glowGradient.addColorStop(1, colors.beam + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(x + sway, y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = '#2D5016';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(x, y + flower.size);
+      ctx.quadraticCurveTo(x + sway, y + flower.size * 0.5, x + sway, y);
+      ctx.stroke();
+
+      const petalScale = 1 + flower.bloomPhase * 0.3;
+      const baseColor = flower.litIntensity > 0 ? colors.beam : flower.color;
+      ctx.fillStyle = baseColor;
+      for (let i = 0; i < flower.petalCount; i++) {
+        const angle = (Math.PI * 2 * i) / flower.petalCount + flower.swayPhase * 0.1;
+        const px = x + sway + Math.cos(angle) * flower.size * 0.5 * petalScale;
+        const py = y + Math.sin(angle) * flower.size * 0.5 * petalScale;
+        ctx.beginPath();
+        ctx.ellipse(px, py, flower.size * 0.4 * petalScale, flower.size * 0.2 * petalScale, angle, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = flower.litIntensity > 0 ? colors.glow : '#FFD93D';
+      ctx.beginPath();
+      ctx.arc(x + sway, y, flower.size * 0.25 * petalScale, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (flower.litIntensity > 0.5) {
+        ctx.fillStyle = colors.particle + '88';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(flower.name, x + sway, y - flower.size - 15);
+
+        for (let i = 0; i < 5; i++) {
+          const sparkAngle = time * 2 + (Math.PI * 2 * i) / 5;
+          const sparkDist = flower.size * 0.8 + Math.sin(time * 3 + i) * 10;
+          const sparkX = x + sway + Math.cos(sparkAngle) * sparkDist;
+          const sparkY = y + Math.sin(sparkAngle) * sparkDist;
+          ctx.fillStyle = colors.glow;
+          ctx.globalAlpha = 0.5 + Math.sin(time * 4 + i) * 0.3;
+          ctx.beginPath();
+          ctx.arc(sparkX, sparkY, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawHiddenPaths = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const path of hiddenPaths) {
+      if (path.revealProgress <= 0) continue;
+
+      const colors = LIGHT_COLOR_MAP[path.requiredColor];
+      ctx.save();
+      ctx.globalAlpha = path.revealProgress * 0.8;
+
+      if (path.points.length < 2) { ctx.restore(); continue; }
+
+      ctx.strokeStyle = path.revealed ? colors.beam : colors.beam + '88';
+      ctx.lineWidth = path.width * path.revealProgress;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash(path.revealed ? [] : [8, 8]);
+      ctx.lineDashOffset = path.revealed ? 0 : -timeRef.current * 15;
+
+      ctx.beginPath();
+      ctx.moveTo(path.points[0].x + ox, path.points[0].y + oy);
+      for (let i = 1; i < path.points.length; i++) {
+        ctx.lineTo(path.points[i].x + ox, path.points[i].y + oy);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (path.revealed) {
+        const glowWidth = path.width * 2;
+        ctx.strokeStyle = colors.glow + '44';
+        ctx.lineWidth = glowWidth;
+        ctx.beginPath();
+        ctx.moveTo(path.points[0].x + ox, path.points[0].y + oy);
+        for (let i = 1; i < path.points.length; i++) {
+          ctx.lineTo(path.points[i].x + ox, path.points[i].y + oy);
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawMemoryTexts = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const text of memoryTexts) {
+      if (text.revealProgress <= 0) continue;
+
+      const colors = LIGHT_COLOR_MAP[text.requiredColor];
+      const x = text.x + ox;
+      const y = text.y + oy;
+
+      ctx.save();
+      ctx.globalAlpha = text.revealProgress;
+
+      if (text.revealProgress < 1) {
+        const glowGradient = ctx.createRadialGradient(x, y, 0, x, y, 50 * text.revealProgress);
+        glowGradient.addColorStop(0, colors.glow + Math.floor(text.revealProgress * 100).toString(16).padStart(2, '0'));
+        glowGradient.addColorStop(1, colors.beam + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(x, y, 50 * text.revealProgress, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = text.revealed ? '#FFFFFF' : colors.glow;
+      ctx.font = `bold ${text.fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = colors.beam;
+      ctx.shadowBlur = text.revealed ? 10 : 5;
+      ctx.fillText(text.text, x, y);
+      ctx.shadowBlur = 0;
+
+      if (text.revealed) {
+        const shimmer = Math.sin(timeRef.current * 3) * 0.2 + 0.8;
+        ctx.globalAlpha = shimmer * 0.3;
+        ctx.fillStyle = colors.particle;
+        ctx.fillText(text.text, x, y);
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const drawLightMechanisms = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const mech of lightMechanisms) {
+      const x = mech.x + ox;
+      const y = mech.y + oy;
+      if (x < -80 || x > viewportWidth + 80 || y < -80 || y > viewportHeight + 80) continue;
+
+      const colors = LIGHT_COLOR_MAP[mech.requiredColor];
+      const pulse = (Math.sin(mech.pulsePhase) + 1) / 2;
+
+      ctx.save();
+
+      if (!mech.activated) {
+        ctx.fillStyle = colors.beam + Math.floor(15 + pulse * 15).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.arc(x, y, mech.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = colors.beam + '66';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = -timeRef.current * 10;
+        ctx.beginPath();
+        ctx.arc(x, y, mech.size, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const progressAngle = mech.activateProgress * Math.PI * 2;
+        ctx.strokeStyle = colors.beam;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, mech.size + 5, -Math.PI / 2, -Math.PI / 2 + progressAngle);
+        ctx.stroke();
+      } else {
+        const glowRadius = mech.size * (1.5 + pulse * 0.5);
+        const glowGradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+        glowGradient.addColorStop(0, colors.beam + 'AA');
+        glowGradient.addColorStop(0.5, colors.glow + '44');
+        glowGradient.addColorStop(1, colors.beam + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = colors.beam;
+        ctx.beginPath();
+        ctx.arc(x, y, mech.size * mech.activateProgress, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(x, y, mech.size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = colors.beam + 'CC';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      const labelMap: Record<string, string> = { gate: '门', bridge: '桥', portal: '传送', bloom: '绽放' };
+      ctx.fillText(labelMap[mech.type] || mech.type, x, y + mech.size + 15);
+
       ctx.restore();
     }
   };

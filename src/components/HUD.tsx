@@ -23,6 +23,13 @@ export const HUD = () => {
     openCompanionPanel,
     triggerHint,
     lastHintTime,
+    lightSources,
+    giantFlowers,
+    hiddenPaths,
+    memoryTexts,
+    lightMechanisms,
+    activeLightId,
+    showLightPuzzleHint,
   } = useGameStore();
 
   const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
@@ -51,6 +58,13 @@ export const HUD = () => {
   
   const hintCooldownRemaining = Math.max(0, hintCooldownMs - (Date.now() - lastHintTime));
   const canHint = isHintCompanion && hintCooldownRemaining === 0;
+
+  const activeLight = lightSources.find(l => l.id === activeLightId) || null;
+  const revealedPaths = hiddenPaths.filter(p => p.revealed).length;
+  const revealedTexts = memoryTexts.filter(t => t.revealed).length;
+  const activatedMechanisms = lightMechanisms.filter(m => m.activated).length;
+  const litFlowers = giantFlowers.filter(f => f.lit).length;
+  const lightColorName: Record<string, string> = { gold: '金光', blue: '蓝光', pink: '粉光' };
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
@@ -211,6 +225,55 @@ export const HUD = () => {
             />
           </div>
         </div>
+
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🔮</span>
+            <span className="text-amber-700 font-medium tracking-wider">光影谜题</span>
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">🌸</span>
+              <span className="text-amber-600 flex-1">巨大花朵</span>
+              <span className="text-amber-500 font-bold">{litFlowers}/{giantFlowers.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">🛤️</span>
+              <span className="text-amber-600 flex-1">隐藏道路</span>
+              <span className="text-amber-500 font-bold">{revealedPaths}/{hiddenPaths.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">📖</span>
+              <span className="text-amber-600 flex-1">记忆文字</span>
+              <span className="text-amber-500 font-bold">{revealedTexts}/{memoryTexts.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">⚙️</span>
+              <span className="text-amber-600 flex-1">光之机关</span>
+              <span className="text-amber-500 font-bold">{activatedMechanisms}/{lightMechanisms.length}</span>
+            </div>
+          </div>
+          {activeLight && (
+            <div className="mt-3 pt-3 border-t border-white/40">
+              <div className="flex items-center gap-2 text-xs">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{
+                    backgroundColor: activeLight.color === 'gold' ? '#FFD700' : activeLight.color === 'blue' ? '#4DA6FF' : '#FF69B4',
+                  }}
+                />
+                <span className="text-amber-700 font-medium">
+                  {lightColorName[activeLight.color]}操控中
+                </span>
+              </div>
+              <div className="flex gap-1 mt-1">
+                <span className="text-xs text-amber-600/70 bg-amber-100/50 px-1.5 py-0.5 rounded">Q 左转</span>
+                <span className="text-xs text-amber-600/70 bg-amber-100/50 px-1.5 py-0.5 rounded">E 右转</span>
+                <span className="text-xs text-amber-600/70 bg-amber-100/50 px-1.5 py-0.5 rounded">L 脱离</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="absolute top-6 right-6 pointer-events-auto space-y-3">
@@ -290,7 +353,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 键伙伴面板 · H 键请求提示 · 探索迷雾地图 · 收集记忆碎片 · 发现隐藏区域
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 伙伴 · H 提示 · L 操控光源 · Q/E 旋转光线 · 探索迷雾地图 · 收集记忆碎片 · 光影谜题
           </p>
         </div>
       </div>

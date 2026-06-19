@@ -233,7 +233,86 @@ export interface DynamicParticle {
   type: DynamicTerrainType;
 }
 
-export interface GameState extends CompanionState {
+export type LightBeamColor = 'gold' | 'blue' | 'pink';
+
+export interface LightSource {
+  id: string;
+  x: number;
+  y: number;
+  angle: number;
+  color: LightBeamColor;
+  beamLength: number;
+  beamWidth: number;
+  movingPattern: 'circular' | 'linear' | 'none';
+  moveRadius: number;
+  moveSpeed: number;
+  movePhase: number;
+  originX: number;
+  originY: number;
+  active: boolean;
+  playerControlled: boolean;
+  pulsePhase: number;
+}
+
+export interface GiantFlower {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  petalCount: number;
+  color: string;
+  name: string;
+  reflectColor: LightBeamColor;
+  swayPhase: number;
+  bloomPhase: number;
+  lit: boolean;
+  litIntensity: number;
+}
+
+export interface HiddenPath {
+  id: string;
+  points: { x: number; y: number }[];
+  requiredColor: LightBeamColor;
+  revealed: boolean;
+  revealProgress: number;
+  width: number;
+}
+
+export interface MemoryText {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  requiredColor: LightBeamColor;
+  revealed: boolean;
+  revealProgress: number;
+  fontSize: number;
+}
+
+export interface LightMechanism {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  requiredColor: LightBeamColor;
+  activated: boolean;
+  activateProgress: number;
+  type: 'gate' | 'bridge' | 'portal' | 'bloom';
+  targetId: string;
+  pulsePhase: number;
+}
+
+export interface LightPuzzleState {
+  lightSources: LightSource[];
+  giantFlowers: GiantFlower[];
+  hiddenPaths: HiddenPath[];
+  memoryTexts: MemoryText[];
+  lightMechanisms: LightMechanism[];
+  activeLightId: string | null;
+  showLightPuzzleHint: boolean;
+}
+
+export interface GameState extends CompanionState, LightPuzzleState {
   butterfly: Butterfly;
   fragments: Fragment[];
   collectedFragments: string[];
