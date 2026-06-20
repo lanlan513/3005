@@ -1,5 +1,6 @@
 import { Fragment } from '../types/game';
 import { START_REGION, DREAM_REGIONS } from './dreamRegions';
+import { EMOTIONS } from './emotions';
 
 export const MAP_WIDTH = 2400;
 export const MAP_HEIGHT = 1800;
@@ -22,7 +23,8 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-1',
     glowPhase: 0,
     floatPhase: 0,
-    color: '#FFB6C8',
+    color: EMOTIONS.joy.color,
+    emotion: 'joy',
   },
   {
     id: 'fragment-4',
@@ -32,7 +34,8 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-4',
     glowPhase: Math.PI / 3,
     floatPhase: Math.PI / 4,
-    color: '#FF8C42',
+    color: EMOTIONS.regret.color,
+    emotion: 'regret',
   },
   {
     id: 'fragment-2',
@@ -42,7 +45,8 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-2',
     glowPhase: Math.PI / 2,
     floatPhase: Math.PI / 2,
-    color: '#FF6B9D',
+    color: EMOTIONS.longing.color,
+    emotion: 'longing',
   },
   {
     id: 'fragment-3',
@@ -52,7 +56,8 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-3',
     glowPhase: Math.PI,
     floatPhase: Math.PI,
-    color: '#FFD93D',
+    color: EMOTIONS.joy.color,
+    emotion: 'joy',
   },
   {
     id: 'fragment-5',
@@ -62,7 +67,8 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-5',
     glowPhase: Math.PI * 1.2,
     floatPhase: Math.PI * 1.5,
-    color: '#87CEEB',
+    color: EMOTIONS.longing.color,
+    emotion: 'longing',
   },
   {
     id: 'fragment-6',
@@ -72,6 +78,7 @@ export const INITIAL_FRAGMENTS: Fragment[] = [
     storyId: 'story-6',
     glowPhase: Math.PI * 1.5,
     floatPhase: Math.PI * 0.7,
-    color: '#9B7EDC',
+    color: EMOTIONS.courage.color,
+    emotion: 'courage',
   },
 ];

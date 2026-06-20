@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { Flower, Tree, ButterflyCompanion, DreamRegion, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism, PhantomTrail, EchoPuzzle } from '../types/game';
+import { Flower, Tree, ButterflyCompanion, DreamRegion, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism, PhantomTrail, EchoPuzzle, EmotionHiddenArea } from '../types/game';
 import { BASE_ACCEL, FRAGMENT_RESPAWN_INTERVAL } from '../store/gameStore';
 import { LIGHT_COLOR_MAP } from '../data/lightPuzzle';
+import { EMOTIONS, EMOTION_COMBINATIONS } from '../data/emotions';
 
 const DECORATIVE_FLOWER_COUNT = 80;
 const TREE_COUNT = 18;
@@ -141,6 +142,14 @@ export const GameCanvas = () => {
     updateEchoPuzzles,
     updateEchoParticles,
     triggerEchoReplay,
+    emotionCounts,
+    currentMoodColors,
+    emotionHiddenAreas,
+    unlockedCombinations,
+    activeCombinationId,
+    updateMoodTransition,
+    checkEmotionAreaDiscovery,
+    openEmotionGarden,
   } = useGameStore();
 
   useEffect(() => {
@@ -188,6 +197,11 @@ export const GameCanvas = () => {
           triggerEchoReplay(lastTrail.id);
         }
       }
+      
+      if (key === 'g' && !e.repeat) {
+        e.preventDefault();
+        openEmotionGarden();
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -203,7 +217,7 @@ export const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [dash, setGliding, openCompanionPanel, triggerHint, rotateLight, interactWithNearestLight, triggerEchoReplay]);
+  }, [dash, setGliding, openCompanionPanel, triggerHint, rotateLight, interactWithNearestLight, triggerEchoReplay, openEmotionGarden]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -349,6 +363,8 @@ export const GameCanvas = () => {
     checkEchoPuzzles();
     updateEchoPuzzles();
     updateEchoParticles();
+    updateMoodTransition();
+    checkEmotionAreaDiscovery();
     if (Math.random() < 0.008) {
       triggerHint();
     }
@@ -394,6 +410,7 @@ export const GameCanvas = () => {
     drawDreamRegions(ctx, offsetX, offsetY);
     drawPath(ctx, offsetX, offsetY);
     drawDreamDecorations(ctx, offsetX, offsetY);
+    drawEmotionHiddenAreas(ctx, offsetX, offsetY);
     drawHiddenAreas(ctx, offsetX, offsetY);
     drawHiddenPaths(ctx, offsetX, offsetY);
     drawLightBeams(ctx, offsetX, offsetY);
@@ -421,19 +438,247 @@ export const GameCanvas = () => {
 
   const drawGround = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, viewportHeight);
-    gradient.addColorStop(0, '#A8E6CF');
-    gradient.addColorStop(0.5, '#88D8A8');
-    gradient.addColorStop(1, '#6BC88A');
+    gradient.addColorStop(0, currentMoodColors.groundStart);
+    gradient.addColorStop(0.5, currentMoodColors.groundMid);
+    gradient.addColorStop(1, currentMoodColors.groundEnd);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, viewportWidth, viewportHeight);
 
-    ctx.fillStyle = 'rgba(77, 167, 108, 0.3)';
+    ctx.fillStyle = 'rgba(77, 167, 108, 0.15)';
     for (let i = 0; i < 60; i++) {
       const gx = ((i * 137) % mapWidth) + ox;
       const gy = ((i * 89) % mapHeight) + oy;
       ctx.beginPath();
       ctx.ellipse(gx, gy, 30 + (i % 3) * 10, 20 + (i % 2) * 8, i * 0.3, 0, Math.PI * 2);
       ctx.fill();
+    }
+  };
+
+  const drawEmotionHiddenAreas = (ctx: CanvasRenderingContext2D, ox: number, oy: number) => {
+    for (const area of emotionHiddenAreas) {
+      const x = area.x + ox;
+      const y = area.y + oy;
+      
+      if (x + area.width < -100 || x > viewportWidth + 100 || 
+          y + area.height < -100 || y > viewportHeight + 100) continue;
+
+      const relatedCombo = EMOTION_COMBINATIONS.find(c => c.unlocksHiddenAreaId === area.id);
+      const isComboUnlocked = relatedCombo ? unlockedCombinations.includes(relatedCombo.id) : false;
+      const isActiveCombo = activeCombinationId === relatedCombo?.id;
+      const time = timeRef.current;
+
+      ctx.save();
+      
+      if (area.discovered || isComboUnlocked) {
+        const pulseIntensity = isActiveCombo ? (Math.sin(time * 3) + 1) / 2 : (Math.sin(time) + 1) / 2;
+        
+        const gradient = ctx.createRadialGradient(
+          x + area.width / 2, y + area.height / 2, 0,
+          x + area.width / 2, y + area.height / 2, Math.max(area.width, area.height) / 2
+        );
+        gradient.addColorStop(0, area.themeColor + (isActiveCombo ? '88' : '55'));
+        gradient.addColorStop(0.5, area.themeColor + '33');
+        gradient.addColorStop(1, area.themeColor + '00');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x - 40, y - 40, area.width + 80, area.height + 80);
+
+        drawEmotionAreaDecoration(ctx, area, x, y, time, pulseIntensity);
+
+        const borderAlpha = isActiveCombo ? 'CC' : '88';
+        const borderGradient = ctx.createLinearGradient(x, y, x + area.width, y + area.height);
+        borderGradient.addColorStop(0, area.themeColor + borderAlpha);
+        borderGradient.addColorStop(0.5, '#FFFFFF' + borderAlpha);
+        borderGradient.addColorStop(1, area.themeColor + borderAlpha);
+        ctx.strokeStyle = borderGradient;
+        ctx.lineWidth = isActiveCombo ? 4 : 3;
+        ctx.setLineDash([12, 6]);
+        ctx.lineDashOffset = time * 12 * (isActiveCombo ? 1 : -1);
+        ctx.strokeRect(x, y, area.width, area.height);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = area.themeColor;
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(area.name, x + area.width / 2, y + area.height / 2 - 10);
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.font = '13px sans-serif';
+        ctx.fillText(area.description, x + area.width / 2, y + area.height / 2 + 15);
+
+        if (isActiveCombo) {
+          for (let i = 0; i < 8; i++) {
+            const angle = time * 2 + (Math.PI * 2 * i) / 8;
+            const dist = Math.max(area.width, area.height) / 2 + 15 + Math.sin(time * 3 + i) * 8;
+            const px = x + area.width / 2 + Math.cos(angle) * dist;
+            const py = y + area.height / 2 + Math.sin(angle) * dist;
+            ctx.fillStyle = area.themeColor + 'CC';
+            ctx.beginPath();
+            ctx.arc(px, py, 3 + pulseIntensity * 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      } else if (isComboUnlocked) {
+        const hintAlpha = 0.12 + Math.sin(time * 1.5) * 0.08;
+        ctx.fillStyle = area.themeColor + Math.floor(hintAlpha * 255).toString(16).padStart(2, '0');
+        ctx.fillRect(x, y, area.width, area.height);
+        
+        ctx.strokeStyle = area.themeColor + '33';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x, y, area.width, area.height);
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = area.themeColor + '88';
+        ctx.font = '28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✦', x + area.width / 2, y + area.height / 2);
+      }
+      
+      ctx.restore();
+    }
+  };
+
+  const drawEmotionAreaDecoration = (
+    ctx: CanvasRenderingContext2D, 
+    area: EmotionHiddenArea, 
+    x: number, y: number, 
+    time: number, 
+    pulse: number
+  ) => {
+    const cx = x + area.width / 2;
+    const cy = y + area.height / 2;
+
+    switch (area.decoration) {
+      case 'starry':
+        for (let i = 0; i < 30; i++) {
+          const sx = x + 20 + (i * 37) % (area.width - 40);
+          const sy = y + 20 + (i * 53) % (area.height - 40);
+          const twinkle = Math.sin(time * 3 + i) * 0.4 + 0.6;
+          ctx.globalAlpha = twinkle;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 1.5 + twinkle, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        break;
+      
+      case 'crystal':
+        for (let i = 0; i < 12; i++) {
+          const angle = (Math.PI * 2 * i) / 12 + time * 0.5;
+          const cr = Math.min(area.width, area.height) * 0.3;
+          const crystalX = cx + Math.cos(angle) * cr;
+          const crystalY = cy + Math.sin(angle) * cr;
+          const size = 8 + pulse * 4;
+          ctx.save();
+          ctx.translate(crystalX, crystalY);
+          ctx.rotate(angle);
+          ctx.fillStyle = area.themeColor + 'AA';
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.6, 0);
+          ctx.lineTo(0, size);
+          ctx.lineTo(-size * 0.6, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          ctx.beginPath();
+          ctx.moveTo(0, -size * 0.6);
+          ctx.lineTo(size * 0.3, 0);
+          ctx.lineTo(0, size * 0.2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        break;
+      
+      case 'rose':
+        for (let i = 0; i < 7; i++) {
+          const angle = (Math.PI * 2 * i) / 7 + time * 0.3;
+          const r = 25 + i * 12;
+          const roseX = cx + Math.cos(angle + time * 0.2) * r * 0.4;
+          const roseY = cy + Math.sin(angle + time * 0.2) * r * 0.4;
+          const petalSize = 10 + i * 2 + pulse * 3;
+          ctx.fillStyle = area.themeColor + (90 - i * 8).toString(16).padStart(2, '0');
+          for (let j = 0; j < 6; j++) {
+            const petalAngle = (Math.PI * 2 * j) / 6;
+            ctx.save();
+            ctx.translate(roseX, roseY);
+            ctx.rotate(petalAngle + time * 0.1);
+            ctx.beginPath();
+            ctx.ellipse(0, -petalSize * 0.5, petalSize * 0.4, petalSize * 0.7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+        break;
+      
+      case 'ocean':
+        for (let i = 0; i < 5; i++) {
+          const wavePhase = time * 2 + i * 0.8;
+          const waveY = cy + Math.sin(wavePhase) * 20 + i * 25 - 50;
+          ctx.strokeStyle = area.themeColor + (40 + i * 10).toString(16).padStart(2, '0');
+          ctx.lineWidth = 2 + i;
+          ctx.beginPath();
+          for (let wx = 0; wx <= area.width; wx += 10) {
+            const wy = waveY + Math.sin(wx * 0.04 + wavePhase) * 8;
+            if (wx === 0) ctx.moveTo(x + wx, wy);
+            else ctx.lineTo(x + wx, wy);
+          }
+          ctx.stroke();
+        }
+        break;
+      
+      case 'aurora':
+        for (let i = 0; i < 6; i++) {
+          const auroraPhase = time * 0.8 + i * 0.5;
+          const gradient = ctx.createLinearGradient(x, y + i * area.height / 8, x + area.width, y + (i + 2) * area.height / 8);
+          const colors = ['#9B7EDC', '#87CEEB', '#FF6B9D', '#FFD93D', '#A8E6CF', area.themeColor];
+          gradient.addColorStop(0, colors[i % colors.length] + '00');
+          gradient.addColorStop(0.3 + Math.sin(auroraPhase) * 0.1, colors[i % colors.length] + Math.floor(30 + pulse * 20).toString(16).padStart(2, '0'));
+          gradient.addColorStop(0.7 + Math.cos(auroraPhase) * 0.1, colors[(i + 2) % colors.length] + Math.floor(20 + pulse * 15).toString(16).padStart(2, '0'));
+          gradient.addColorStop(1, colors[(i + 1) % colors.length] + '00');
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          for (let ax = 0; ax <= area.width; ax += 5) {
+            const ay = y + area.height / 2 + Math.sin(ax * 0.03 + auroraPhase + i) * (30 + i * 8) + i * 5 - 30;
+            if (ax === 0) ctx.moveTo(x + ax, ay);
+            else ctx.lineTo(x + ax, ay);
+          }
+          for (let ax = area.width; ax >= 0; ax -= 5) {
+            const ay = y + area.height / 2 + Math.sin(ax * 0.03 + auroraPhase + i) * (30 + i * 8) + i * 5 - 10;
+            ctx.lineTo(x + ax, ay);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+      
+      case 'ember':
+        for (let i = 0; i < 25; i++) {
+          const ex = x + 30 + (i * 47) % (area.width - 60);
+          const baseY = y + 30 + (i * 61) % (area.height - 60);
+          const floatOffset = (time * 30 + i * 20) % (area.height - 60);
+          const ey = baseY - floatOffset + (floatOffset > area.height - 60 - baseY ? (area.height - 60) : 0);
+          const emberPulse = Math.sin(time * 5 + i) * 0.3 + 0.7;
+          const size = 2 + emberPulse * 2;
+          ctx.globalAlpha = 0.5 + emberPulse * 0.5;
+          const emberGlow = ctx.createRadialGradient(ex, ey, 0, ex, ey, size * 4);
+          emberGlow.addColorStop(0, '#FFD700');
+          emberGlow.addColorStop(0.3, area.themeColor);
+          emberGlow.addColorStop(1, area.themeColor + '00');
+          ctx.fillStyle = emberGlow;
+          ctx.beginPath();
+          ctx.arc(ex, ey, size * 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#FFFFAA';
+          ctx.beginPath();
+          ctx.arc(ex, ey, size * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        break;
     }
   };
 
@@ -1196,6 +1441,18 @@ export const GameCanvas = () => {
       ctx.lineTo(-5, -4);
       ctx.closePath();
       ctx.fill();
+      
+      if (fragment.emotion && EMOTIONS[fragment.emotion]) {
+        const emotion = EMOTIONS[fragment.emotion];
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = emotion.color;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = emotion.glowColor;
+        ctx.fillText(emotion.icon, 0, 0);
+        ctx.shadowBlur = 0;
+      }
       
       ctx.restore();
       

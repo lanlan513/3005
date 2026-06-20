@@ -42,17 +42,6 @@ export interface AbilityLevel {
   glideEfficiency: number;
 }
 
-export interface Fragment {
-  id: string;
-  x: number;
-  y: number;
-  collected: boolean;
-  storyId: string;
-  glowPhase: number;
-  floatPhase: number;
-  color: string;
-}
-
 export interface Story {
   id: string;
   title: string;
@@ -369,7 +358,97 @@ export interface LightPuzzleState {
   showLightPuzzleHint: boolean;
 }
 
-export interface GameState extends CompanionState, LightPuzzleState, MemoryEchoState {
+export type EmotionType = 'joy' | 'regret' | 'courage' | 'longing';
+
+export interface Emotion {
+  type: EmotionType;
+  name: string;
+  color: string;
+  glowColor: string;
+  bgColor: string;
+  icon: string;
+  description: string;
+  musicMood: 'upbeat' | 'melancholic' | 'epic' | 'nostalgic';
+}
+
+export interface EmotionCount {
+  joy: number;
+  regret: number;
+  courage: number;
+  longing: number;
+}
+
+export interface EmotionCombination {
+  id: string;
+  name: string;
+  requiredEmotions: Partial<EmotionCount>;
+  minTotal: number;
+  description: string;
+  unlocksHiddenAreaId: string | null;
+  unlocksStoryId: string | null;
+  colorTheme: string;
+  musicMood: 'upbeat' | 'melancholic' | 'epic' | 'nostalgic' | 'peaceful';
+}
+
+export interface EmotionHiddenArea {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  discovered: boolean;
+  description: string;
+  themeColor: string;
+  decoration: 'starry' | 'crystal' | 'rose' | 'ocean' | 'aurora' | 'ember';
+}
+
+export interface EmotionStory {
+  id: string;
+  title: string;
+  content: string;
+  combinationId: string;
+  unlocked: boolean;
+}
+
+export interface EmotionGardenState {
+  emotionCounts: EmotionCount;
+  activeCombinationId: string | null;
+  unlockedCombinations: string[];
+  emotionHiddenAreas: EmotionHiddenArea[];
+  emotionStories: EmotionStory[];
+  showEmotionGarden: boolean;
+  currentEmotionStory: EmotionStory | null;
+  showEmotionStory: boolean;
+  moodTransitionProgress: number;
+  currentMoodColors: {
+    groundStart: string;
+    groundMid: string;
+    groundEnd: string;
+  };
+  targetMoodColors: {
+    groundStart: string;
+    groundMid: string;
+    groundEnd: string;
+  };
+  bgMusicTrack: string | null;
+  isMusicPlaying: boolean;
+  musicVolume: number;
+}
+
+export interface Fragment {
+  id: string;
+  x: number;
+  y: number;
+  collected: boolean;
+  storyId: string;
+  glowPhase: number;
+  floatPhase: number;
+  color: string;
+  emotion?: EmotionType;
+}
+
+export interface GameState extends CompanionState, LightPuzzleState, MemoryEchoState, EmotionGardenState {
   butterfly: Butterfly;
   fragments: Fragment[];
   collectedFragments: string[];

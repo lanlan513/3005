@@ -8,6 +8,9 @@ import { AbilityUnlockModal } from '../components/AbilityUnlockModal';
 import { CompanionEncounter } from '../components/CompanionEncounter';
 import { CompanionPanel } from '../components/CompanionPanel';
 import { HintBubble } from '../components/HintBubble';
+import { EmotionGardenPanel } from '../components/EmotionGardenPanel';
+import { EmotionStoryModal } from '../components/EmotionStoryModal';
+import { BackgroundMusic } from '../components/BackgroundMusic';
 
 export const Game = () => {
   return (
@@ -22,6 +25,9 @@ export const Game = () => {
       <CompanionEncounter />
       <CompanionPanel />
       <HintBubble />
+      <EmotionGardenPanel />
+      <EmotionStoryModal />
+      <BackgroundMusic />
     </div>
   );
 };

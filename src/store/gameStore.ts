@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion, DynamicParticle, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism, PhantomSnapshot, PhantomTrail, EchoPuzzle } from '../types/game';
+import { GameState, Butterfly, Fragment, Particle, Petal, Firefly, FogCell, Flower, ButterflyAbility, ButterflyCompanion, DynamicParticle, LightSource, GiantFlower, HiddenPath, MemoryText, LightMechanism, PhantomSnapshot, PhantomTrail, EchoPuzzle, EmotionType } from '../types/game';
 import { INITIAL_FRAGMENTS, MAP_WIDTH, MAP_HEIGHT } from '../data/fragments';
 import { getStoryByFragmentId } from '../data/stories';
 import { FLOWER_DATA, checkFlowerUnlock } from '../data/flowers';
@@ -37,6 +37,15 @@ import {
   LIGHT_COLOR_MAP,
   INITIAL_ECHO_PUZZLES,
 } from '../data/lightPuzzle';
+import {
+  EMOTION_COMBINATIONS,
+  EMOTION_HIDDEN_AREAS,
+  EMOTION_STORIES,
+  EMOTIONS,
+  DEFAULT_MOOD_COLORS,
+  checkCombinationUnlock,
+  getMoodColorsFromEmotions,
+} from '../data/emotions';
 
 const FOG_CELL_SIZE = 40;
 const BASE_VISIBILITY_RADIUS = 120;
@@ -131,7 +140,7 @@ const createFogGrid = (): { grid: FogCell[][]; total: number } => {
 
 const generateRandomFragments = (count: number, existingIds: string[]): Fragment[] => {
   const fragments: Fragment[] = [];
-  const colors = ['#FFB6C8', '#9B7EDC', '#A8E6CF', '#FFD93D', '#87CEEB', '#FF9ECD'];
+  const emotionTypes: EmotionType[] = ['joy', 'regret', 'courage', 'longing'];
   const regions = [
     { minX: 100, maxX: 800, minY: 100, maxY: 600 },
     { minX: 800, maxX: 1600, minY: 100, maxY: 600 },
@@ -149,6 +158,8 @@ const generateRandomFragments = (count: number, existingIds: string[]): Fragment
     const id = `fragment-random-${Date.now()}-${i}`;
     if (existingIds.includes(id)) continue;
 
+    const emotion = emotionTypes[Math.floor(Math.random() * emotionTypes.length)];
+
     fragments.push({
       id,
       x: region.minX + Math.random() * (region.maxX - region.minX),
@@ -157,7 +168,8 @@ const generateRandomFragments = (count: number, existingIds: string[]): Fragment
       storyId: '',
       glowPhase: Math.random() * Math.PI * 2,
       floatPhase: Math.random() * Math.PI * 2,
-      color: colors[Math.floor(Math.random() * colors.length)],
+      color: EMOTIONS[emotion].color,
+      emotion,
     });
   }
   return fragments;
@@ -237,6 +249,18 @@ export const useGameStore = create<GameState & {
   updateEchoParticles: () => void;
   spawnEchoParticles: (x: number, y: number, color: string) => void;
   findRegionAtPosition: (x: number, y: number) => string | null;
+  addEmotion: (emotion: EmotionType) => void;
+  checkEmotionCombinations: () => void;
+  setActiveCombination: (combinationId: string | null) => void;
+  openEmotionGarden: () => void;
+  closeEmotionGarden: () => void;
+  openEmotionStory: (storyId: string) => void;
+  closeEmotionStory: () => void;
+  updateMoodTransition: () => void;
+  discoverEmotionArea: (areaId: string) => void;
+  checkEmotionAreaDiscovery: () => void;
+  toggleMusic: () => void;
+  setMusicVolume: (volume: number) => void;
 }>((set, get) => ({
   butterfly: createInitialButterfly(),
   fragments: [...INITIAL_FRAGMENTS],
@@ -302,6 +326,20 @@ export const useGameStore = create<GameState & {
   echoParticles: [],
   showEchoHint: false,
   echoHintText: null,
+  emotionCounts: { joy: 0, regret: 0, courage: 0, longing: 0 },
+  activeCombinationId: null,
+  unlockedCombinations: [],
+  emotionHiddenAreas: EMOTION_HIDDEN_AREAS.map(a => ({ ...a })),
+  emotionStories: EMOTION_STORIES.map(s => ({ ...s })),
+  showEmotionGarden: false,
+  currentEmotionStory: null,
+  showEmotionStory: false,
+  moodTransitionProgress: 1,
+  currentMoodColors: { ...DEFAULT_MOOD_COLORS },
+  targetMoodColors: { ...DEFAULT_MOOD_COLORS },
+  bgMusicTrack: null,
+  isMusicPlaying: false,
+  musicVolume: 0.5,
 
   setViewport: (w, h) => set({ viewportWidth: w, viewportHeight: h }),
 
@@ -407,6 +445,9 @@ export const useGameStore = create<GameState & {
       if (dist < collectRadius) {
         const story = getStoryByFragmentId(fragment.id);
         get().spawnCollectParticles(fragment.x, fragment.y, fragment.color);
+        if (fragment.emotion) {
+          get().addEmotion(fragment.emotion);
+        }
         set({
           fragments: fragments.map((f) =>
             f.id === fragment.id ? { ...f, collected: true } : f
@@ -419,6 +460,7 @@ export const useGameStore = create<GameState & {
           currentStory: story || null,
         });
         get().unlockDreamRegion(fragment.id);
+        get().checkEmotionCombinations();
         break;
       }
     }
@@ -895,6 +937,20 @@ export const useGameStore = create<GameState & {
       echoParticles: [],
       showEchoHint: false,
       echoHintText: null,
+      emotionCounts: { joy: 0, regret: 0, courage: 0, longing: 0 },
+      activeCombinationId: null,
+      unlockedCombinations: [],
+      emotionHiddenAreas: EMOTION_HIDDEN_AREAS.map(a => ({ ...a })),
+      emotionStories: EMOTION_STORIES.map(s => ({ ...s })),
+      showEmotionGarden: false,
+      currentEmotionStory: null,
+      showEmotionStory: false,
+      moodTransitionProgress: 1,
+      currentMoodColors: { ...DEFAULT_MOOD_COLORS },
+      targetMoodColors: { ...DEFAULT_MOOD_COLORS },
+      bgMusicTrack: null,
+      isMusicPlaying: false,
+      musicVolume: 0.5,
     });
   },
 
@@ -1877,6 +1933,219 @@ export const useGameStore = create<GameState & {
       });
     }
     set({ echoParticles: [...echoParticles, ...newParticles] });
+  },
+
+  addEmotion: (emotion: EmotionType) => {
+    const { emotionCounts } = get();
+    const newCounts = {
+      ...emotionCounts,
+      [emotion]: emotionCounts[emotion] + 1,
+    };
+    const targetColors = getMoodColorsFromEmotions(newCounts);
+    set({
+      emotionCounts: newCounts,
+      targetMoodColors: targetColors,
+      moodTransitionProgress: 0,
+    });
+  },
+
+  checkEmotionCombinations: () => {
+    const { emotionCounts, unlockedCombinations, emotionHiddenAreas, emotionStories } = get();
+    
+    let newUnlockedCombos = [...unlockedCombinations];
+    let updatedAreas = [...emotionHiddenAreas];
+    let updatedStories = [...emotionStories];
+    let firstNewCombo: string | null = null;
+
+    for (const combo of EMOTION_COMBINATIONS) {
+      if (newUnlockedCombos.includes(combo.id)) continue;
+
+      if (checkCombinationUnlock(combo, emotionCounts)) {
+        newUnlockedCombos = [...newUnlockedCombos, combo.id];
+        if (!firstNewCombo) firstNewCombo = combo.id;
+
+        if (combo.unlocksHiddenAreaId) {
+          const areaIdx = updatedAreas.findIndex(a => a.id === combo.unlocksHiddenAreaId);
+          if (areaIdx >= 0) {
+            updatedAreas[areaIdx] = { ...updatedAreas[areaIdx], discovered: true };
+          }
+        }
+
+        if (combo.unlocksStoryId) {
+          const storyIdx = updatedStories.findIndex(s => s.id === combo.unlocksStoryId);
+          if (storyIdx >= 0) {
+            updatedStories[storyIdx] = { ...updatedStories[storyIdx], unlocked: true };
+          }
+        }
+      }
+    }
+
+    if (firstNewCombo) {
+      const combo = EMOTION_COMBINATIONS.find(c => c.id === firstNewCombo);
+      if (combo) {
+        set({
+          activeCombinationId: firstNewCombo,
+          unlockedCombinations: newUnlockedCombos,
+          emotionHiddenAreas: updatedAreas,
+          emotionStories: updatedStories,
+        });
+        if (combo.unlocksStoryId) {
+          const story = updatedStories.find(s => s.id === combo.unlocksStoryId);
+          if (story) {
+            set({
+              showEmotionStory: true,
+              currentEmotionStory: story,
+            });
+          }
+        }
+      }
+    } else if (newUnlockedCombos.length !== unlockedCombinations.length) {
+      set({
+        unlockedCombinations: newUnlockedCombos,
+        emotionHiddenAreas: updatedAreas,
+        emotionStories: updatedStories,
+      });
+    }
+  },
+
+  setActiveCombination: (combinationId: string | null) => {
+    const { emotionCounts } = get();
+    if (combinationId) {
+      const combo = EMOTION_COMBINATIONS.find(c => c.id === combinationId);
+      if (combo) {
+        const hexToRgb = (hex: string) => {
+          const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 155, g: 126, b: 220 };
+        };
+        const rgbToHex = (r: number, g: number, b: number) => '#' + [r, g, b].map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
+        const base = hexToRgb(combo.colorTheme);
+        const mixWhite = (amt: number) => rgbToHex(base.r + (255 - base.r) * amt, base.g + (255 - base.g) * amt, base.b + (255 - base.b) * amt);
+        const mixBlack = (amt: number) => rgbToHex(base.r * (1 - amt), base.g * (1 - amt), base.b * (1 - amt));
+        const themeColors = {
+          groundStart: mixWhite(0.35),
+          groundMid: combo.colorTheme,
+          groundEnd: mixBlack(0.18),
+        };
+        set({
+          activeCombinationId: combinationId,
+          targetMoodColors: themeColors,
+          moodTransitionProgress: 0,
+        });
+      }
+    } else {
+      const targetColors = getMoodColorsFromEmotions(emotionCounts);
+      set({
+        activeCombinationId: null,
+        targetMoodColors: targetColors,
+        moodTransitionProgress: 0,
+      });
+    }
+  },
+
+  openEmotionGarden: () => set({ showEmotionGarden: true }),
+  closeEmotionGarden: () => set({ showEmotionGarden: false }),
+
+  openEmotionStory: (storyId: string) => {
+    const { emotionStories } = get();
+    const story = emotionStories.find(s => s.id === storyId);
+    if (story && story.unlocked) {
+      set({
+        showEmotionStory: true,
+        currentEmotionStory: story,
+      });
+    }
+  },
+
+  closeEmotionStory: () => set({ showEmotionStory: false, currentEmotionStory: null }),
+
+  updateMoodTransition: () => {
+    const { moodTransitionProgress, currentMoodColors, targetMoodColors } = get();
+    if (moodTransitionProgress >= 1) return;
+
+    const newProgress = Math.min(1, moodTransitionProgress + 0.01);
+
+    const hexToRgb = (hex: string) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return { r, g, b };
+    };
+
+    const rgbToHex = (r: number, g: number, b: number) => {
+      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+    };
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const lerpColor = (from: string, to: string, t: number) => {
+      const f = hexToRgb(from);
+      const toC = hexToRgb(to);
+      return rgbToHex(lerp(f.r, toC.r, t), lerp(f.g, toC.g, t), lerp(f.b, toC.b, t));
+    };
+
+    const newColors = {
+      groundStart: lerpColor(currentMoodColors.groundStart, targetMoodColors.groundStart, newProgress),
+      groundMid: lerpColor(currentMoodColors.groundMid, targetMoodColors.groundMid, newProgress),
+      groundEnd: lerpColor(currentMoodColors.groundEnd, targetMoodColors.groundEnd, newProgress),
+    };
+
+    if (newProgress >= 1) {
+      set({
+        moodTransitionProgress: 1,
+        currentMoodColors: { ...targetMoodColors },
+      });
+    } else {
+      set({
+        moodTransitionProgress: newProgress,
+        currentMoodColors: newColors,
+      });
+    }
+  },
+
+  discoverEmotionArea: (areaId: string) => {
+    const { emotionHiddenAreas } = get();
+    const updatedAreas = emotionHiddenAreas.map(area =>
+      area.id === areaId ? { ...area, discovered: true } : area
+    );
+    set({ emotionHiddenAreas: updatedAreas });
+  },
+
+  checkEmotionAreaDiscovery: () => {
+    const { butterfly, emotionHiddenAreas, unlockedCombinations } = get();
+
+    let hasChanges = false;
+    const updatedAreas = emotionHiddenAreas.map(area => {
+      if (area.discovered) return area;
+
+      const relatedCombo = EMOTION_COMBINATIONS.find(c => c.unlocksHiddenAreaId === area.id);
+      if (!relatedCombo || !unlockedCombinations.includes(relatedCombo.id)) return area;
+
+      const centerX = area.x + area.width / 2;
+      const centerY = area.y + area.height / 2;
+      const dx = butterfly.x - centerX;
+      const dy = butterfly.y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const detectRadius = Math.max(area.width, area.height) / 2 + 50;
+
+      if (dist < detectRadius) {
+        hasChanges = true;
+        return { ...area, discovered: true };
+      }
+      return area;
+    });
+
+    if (hasChanges) {
+      set({ emotionHiddenAreas: updatedAreas });
+    }
+  },
+
+  toggleMusic: () => {
+    const { isMusicPlaying } = get();
+    set({ isMusicPlaying: !isMusicPlaying });
+  },
+
+  setMusicVolume: (volume: number) => {
+    set({ musicVolume: Math.max(0, Math.min(1, volume)) });
   },
 }));
 

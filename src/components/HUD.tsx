@@ -3,6 +3,7 @@ import { useGameStore } from '../store/gameStore';
 import { BookOpen, Sparkles, Flower2, Zap, Wind } from 'lucide-react';
 import { FLOWER_DATA } from '../data/flowers';
 import { CompanionAbility } from '../types/game';
+import { EMOTIONS, EMOTION_COMBINATIONS } from '../data/emotions';
 
 const abilityIcon: Record<CompanionAbility, string> = {
   light: '✨',
@@ -34,6 +35,12 @@ export const HUD = () => {
     echoPuzzles,
     showEchoHint,
     echoHintText,
+    emotionCounts,
+    unlockedCombinations,
+    activeCombinationId,
+    openEmotionGarden,
+    isMusicPlaying,
+    toggleMusic,
   } = useGameStore();
 
   const activeCompanion = companions.find(c => c.id === activeCompanionId) || null;
@@ -315,6 +322,72 @@ export const HUD = () => {
             <span className="text-xs text-purple-600/70 bg-purple-100/50 px-1.5 py-0.5 rounded">R 回响</span>
           </div>
         </div>
+
+        <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🌈</span>
+            <span className="font-medium tracking-wider" style={{ color: '#7C3AED' }}>情绪花园</span>
+            <span className="ml-auto text-xs text-gray-500">
+              {unlockedCombinations.length}/{EMOTION_COMBINATIONS.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {(Object.keys(EMOTIONS) as Array<keyof typeof EMOTIONS>).map(emotionType => {
+              const emotion = EMOTIONS[emotionType];
+              const count = emotionCounts[emotionType];
+              const maxForBar = 5;
+              const percentage = Math.min(100, (count / maxForBar) * 100);
+              return (
+                <div key={emotionType} className="flex items-center gap-2">
+                  <span className="text-lg" title={emotion.name}>{emotion.icon}</span>
+                  <span className="text-xs flex-1" style={{ color: emotion.color }}>
+                    {emotion.name}
+                  </span>
+                  <span className="text-xs font-bold w-6 text-right" style={{ color: emotion.color }}>
+                    {count}
+                  </span>
+                  <div className="w-20 h-2 bg-white/50 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${percentage}%`,
+                        backgroundColor: emotion.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {activeCombinationId && (
+            <div className="mt-3 pt-3 border-t border-white/40">
+              {(() => {
+                const active = EMOTION_COMBINATIONS.find(c => c.id === activeCombinationId);
+                if (!active) return null;
+                return (
+                  <div
+                    className="rounded-lg px-3 py-2 border"
+                    style={{
+                      backgroundColor: active.colorTheme + '22',
+                      borderColor: active.colorTheme + '66',
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">✨</span>
+                      <span
+                        className="text-sm font-bold"
+                        style={{ color: active.colorTheme }}
+                      >
+                        {active.name}
+                      </span>
+                      <span className="text-xs text-gray-500">激活中</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="absolute top-6 right-6 pointer-events-auto space-y-3">
@@ -330,6 +403,17 @@ export const HUD = () => {
         </button>
 
         <button
+          onClick={openEmotionGarden}
+          className="w-full flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 hover:scale-105 active:scale-95 group"
+        >
+          <span className="text-xl">🌈</span>
+          <span className="text-purple-700 font-medium tracking-wider">情绪花园</span>
+          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 text-white text-xs flex items-center justify-center font-bold">
+            {unlockedCombinations.length}
+          </div>
+        </button>
+
+        <button
           onClick={openCompanionPanel}
           className="w-full flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 hover:scale-105 active:scale-95 group"
         >
@@ -338,6 +422,19 @@ export const HUD = () => {
           <div className="w-6 h-6 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 text-white text-xs flex items-center justify-center font-bold">
             {unlockedCompanions}
           </div>
+        </button>
+
+        <button
+          onClick={toggleMusic}
+          className={`w-full flex items-center gap-2 bg-white/40 backdrop-blur-md rounded-2xl px-5 py-3 border border-white/60 shadow-lg hover:bg-white/60 transition-all duration-300 active:scale-95 ${
+            !isMusicPlaying ? 'opacity-70' : ''
+          }`}
+        >
+          <span className="text-lg">{isMusicPlaying ? '🎵' : '🔇'}</span>
+          <span className="text-purple-700 text-sm font-medium tracking-wider flex-1">
+            {isMusicPlaying ? '音乐开启' : '音乐关闭'}
+          </span>
+          <span className="text-xs text-gray-500">M 键</span>
         </button>
 
         {activeCompanion && (
@@ -394,7 +491,7 @@ export const HUD = () => {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/30 backdrop-blur-sm rounded-full px-6 py-2 border border-white/40">
           <p className="text-purple-600/70 text-sm tracking-wider">
-          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 伙伴 · H 提示 · L 操控光源 · Q/E 旋转光线 · R 回响重播 · 探索迷雾地图 · 收集记忆碎片 · 光影谜题 · 记忆回响
+          WASD / 方向键 控制飞舞 · 空格冲刺 · Shift 滑翔 · B 伙伴 · H 提示 · G 情绪花园 · M 音乐 · L 操控光源 · Q/E 旋转光线 · R 回响重播 · 探索迷雾地图 · 收集记忆碎片 · 光影谜题 · 记忆回响 · 情绪花园
           </p>
         </div>
       </div>
