@@ -2111,31 +2111,79 @@ export const useGameStore = create<GameState & {
   },
 
   checkEmotionAreaDiscovery: () => {
-    const { butterfly, emotionHiddenAreas, unlockedCombinations } = get();
+    const { butterfly, emotionHiddenAreas, unlockedCombinations, particles: curParticles } = get();
 
     let hasChanges = false;
+    const burstFor: { x: number; y: number; color: string }[] = [];
+    const ambient: Particle[] = [];
     const updatedAreas = emotionHiddenAreas.map(area => {
-      if (area.discovered) return area;
-
       const relatedCombo = EMOTION_COMBINATIONS.find(c => c.unlocksHiddenAreaId === area.id);
-      if (!relatedCombo || !unlockedCombinations.includes(relatedCombo.id)) return area;
+      const comboUnlocked = relatedCombo && unlockedCombinations.includes(relatedCombo.id);
 
       const centerX = area.x + area.width / 2;
       const centerY = area.y + area.height / 2;
       const dx = butterfly.x - centerX;
       const dy = butterfly.y - centerY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const detectRadius = Math.max(area.width, area.height) / 2 + 50;
 
-      if (dist < detectRadius) {
-        hasChanges = true;
-        return { ...area, discovered: true };
+      if (!area.discovered) {
+        if (comboUnlocked) {
+          const detectRadius = Math.max(area.width, area.height) / 2 + 50;
+          if (dist < detectRadius) {
+            hasChanges = true;
+            burstFor.push({ x: centerX, y: centerY, color: area.themeColor });
+            return { ...area, discovered: true };
+          }
+        }
+        return area;
       }
+
+      if (comboUnlocked && dist < Math.max(area.width, area.height) / 2.3) {
+        if (Math.random() < 0.06) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = Math.random() * Math.min(area.width, area.height) * 0.38;
+          const px = centerX + Math.cos(angle) * r;
+          const py = centerY + Math.sin(angle) * r;
+          ambient.push({
+            x: px, y: py,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: -0.2 - Math.random() * 0.4,
+            life: 90 + Math.random() * 60,
+            maxLife: 150,
+            color: area.themeColor,
+            size: 2.5 + Math.random() * 2.5,
+          });
+        }
+      }
+
       return area;
     });
 
-    if (hasChanges) {
-      set({ emotionHiddenAreas: updatedAreas });
+    const burst: Particle[] = [];
+    burstFor.forEach(b => {
+      for (let i = 0; i < 30; i++) {
+        const angle = (Math.PI * 2 * i) / 30 + Math.random() * 0.4;
+        const speed = 1.5 + Math.random() * 2.5;
+        burst.push({
+          x: b.x,
+          y: b.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 1.2,
+          life: 70,
+          maxLife: 120,
+          color: b.color,
+          size: 3 + Math.random() * 4,
+        });
+      }
+    });
+
+    const newParticles = [...ambient, ...burst];
+    if (hasChanges || newParticles.length > 0) {
+      const merged = hasChanges ? updatedAreas : emotionHiddenAreas;
+      set({
+        emotionHiddenAreas: merged,
+        particles: [...curParticles, ...newParticles].slice(-1200),
+      });
     }
   },
 

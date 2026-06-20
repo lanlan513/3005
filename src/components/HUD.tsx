@@ -84,7 +84,7 @@ export const HUD = () => {
 
   return (
     <div className="fixed inset-0 pointer-events-none z-20">
-      <div className="absolute top-6 left-6 pointer-events-auto space-y-3">
+      <div className="absolute top-6 left-6 pointer-events-auto space-y-3 max-h-[calc(100vh-48px)] overflow-y-auto pr-3 custom-thin-scrollbar" style={{ scrollbarWidth: 'thin' }}>
         <div className="bg-white/40 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/60 shadow-lg">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-5 h-5 text-yellow-500" />
